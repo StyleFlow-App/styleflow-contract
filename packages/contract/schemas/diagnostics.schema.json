@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.styleflow.app/v1/diagnostics.schema.json",
+  "title": "Styleflow Diagnostics v1",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["code", "severity", "blocking", "path", "themeIds", "message"],
+    "properties": {
+      "code": { "type": "string", "pattern": "^SF_[A-Z0-9_]+$" },
+      "severity": { "enum": ["info", "warning", "error"] },
+      "blocking": { "type": "boolean" },
+      "path": { "type": "string" },
+      "themeIds": { "type": "array", "items": { "type": "string" } },
+      "message": { "type": "string", "minLength": 1 },
+      "suggestion": { "type": "string" },
+      "standardRef": { "type": "string" },
+      "target": { "type": "string" }
+    }
+  }
+}

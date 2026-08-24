@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.styleflow.app/v1/manifest.schema.json",
+  "title": "Styleflow Bundle Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mediaType",
+    "bundleVersion",
+    "kind",
+    "project",
+    "compiler",
+    "themes",
+    "accessibility",
+    "capabilities",
+    "targets",
+    "files"
+  ],
+  "properties": {
+    "mediaType": { "const": "application/vnd.styleflow.bundle+zip" },
+    "bundleVersion": { "const": "1.0.0" },
+    "kind": { "enum": ["preview", "release"] },
+    "project": {
+      "type": "object",
+      "required": ["id", "slug", "name"],
+      "properties": {
+        "id": { "type": "string" },
+        "slug": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "release": { "type": "object" },
+    "preview": { "type": "object" },
+    "compiler": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "@styleflow.app/contract" },
+        "version": { "type": "string" }
+      }
+    },
+    "themes": { "type": "array", "items": { "type": "string" } },
+    "accessibility": { "type": "object" },
+    "capabilities": { "type": "object" },
+    "targets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["styleflow-cli-vnext", "styleflow-cli-0.3", "figma-vnext"],
+      "properties": {
+        "styleflow-cli-vnext": { "$ref": "#/$defs/target" },
+        "styleflow-cli-0.3": { "$ref": "#/$defs/target" },
+        "figma-vnext": { "$ref": "#/$defs/target" }
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "mediaType", "bytes", "sha256"],
+        "properties": {
+          "path": { "type": "string" },
+          "mediaType": { "type": "string" },
+          "bytes": { "type": "integer", "minimum": 0 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reasons"],
+      "properties": {
+        "status": {
+          "enum": ["supported", "supported-with-warnings", "unsupported", "not-evaluated"]
+        },
+        "reasons": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z0-9_]+$" } }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "release" } } },
+      "then": { "required": ["release"], "properties": { "release": true } },
+      "else": { "required": ["preview"], "properties": { "preview": true } }
+    }
+  ]
+}

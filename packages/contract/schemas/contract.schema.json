@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.styleflow.app/v1/contract.schema.json",
+  "title": "Styleflow Semantic and Resolved Contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "project", "themes", "axes", "capabilities", "agentPolicy"],
+  "properties": {
+    "formatVersion": { "const": "1.0.0" },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "slug", "name"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "slug": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" }
+      }
+    },
+    "themes": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "axes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["color", "layout", "typography", "interaction"],
+      "properties": {
+        "color": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tones", "intensitiesByTone", "surfaces", "foregrounds"],
+          "properties": {
+            "tones": { "$ref": "#/$defs/uniqueIds" },
+            "intensitiesByTone": { "type": "object", "minProperties": 1, "additionalProperties": { "$ref": "#/$defs/uniqueIds" } },
+            "surfaces": { "$ref": "#/$defs/uniqueIds" },
+            "foregrounds": { "$ref": "#/$defs/uniqueIds" }
+          }
+        },
+        "layout": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["roles", "densities", "breakpoints"],
+          "properties": {
+            "roles": { "$ref": "#/$defs/uniqueIds" },
+            "densities": { "$ref": "#/$defs/uniqueIds" },
+            "breakpoints": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "minWidth"],
+                "properties": { "id": { "type": "string", "minLength": 1 }, "minWidth": { "type": "number", "minimum": 0 } }
+              }
+            }
+          }
+        },
+        "typography": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["types", "variantsByType", "weights"],
+          "properties": {
+            "types": { "$ref": "#/$defs/uniqueIds" },
+            "variantsByType": { "type": "object", "minProperties": 1, "additionalProperties": { "$ref": "#/$defs/uniqueIds" } },
+            "weights": { "$ref": "#/$defs/uniqueIds" }
+          }
+        },
+        "interaction": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["priorities", "states"],
+          "properties": { "priorities": { "$ref": "#/$defs/uniqueIds" }, "states": { "$ref": "#/$defs/uniqueIds" } }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["themeCount", "maxIntensityCount", "customThemes", "asymmetricIntensity", "contextualInteractions", "fluidTypography", "breakpointCount", "typographyTokenCount"],
+      "properties": {
+        "themeCount": { "type": "integer", "minimum": 1 },
+        "maxIntensityCount": { "type": "integer", "minimum": 1, "maximum": 21 },
+        "customThemes": { "type": "boolean" },
+        "asymmetricIntensity": { "type": "boolean" },
+        "contextualInteractions": { "type": "boolean" },
+        "fluidTypography": { "type": "boolean" },
+        "breakpointCount": { "type": "integer", "minimum": 1 },
+        "typographyTokenCount": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "agentPolicy": { "type": "object" },
+    "activeTheme": { "type": "string", "minLength": 1 },
+    "resolved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tokens", "onColors", "surfaces", "interactions", "layout", "typography"],
+      "properties": {
+        "tokens": { "type": "object", "additionalProperties": { "type": "string" } },
+        "onColors": { "type": "array" },
+        "surfaces": { "type": "array" },
+        "interactions": { "type": "array" },
+        "layout": { "type": "object" },
+        "typography": { "type": "array" }
+      }
+    }
+  },
+  "$defs": {
+    "uniqueIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+  },
+  "dependentRequired": { "activeTheme": ["resolved"], "resolved": ["activeTheme"] }
+}

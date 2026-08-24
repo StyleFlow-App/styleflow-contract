@@ -1,0 +1,745 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.styleflow.app/v1/project.schema.json",
+  "title": "Styleflow Project Source v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "project",
+    "settings",
+    "themes",
+    "colors",
+    "layout",
+    "typography",
+    "agentPolicy"
+  ],
+  "properties": {
+    "formatVersion": { "const": "1.0.0" },
+    "project": { "$ref": "#/$defs/project" },
+    "settings": { "$ref": "#/$defs/settings" },
+    "themes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/theme" } },
+    "colors": { "$ref": "#/$defs/colors" },
+    "layout": { "$ref": "#/$defs/layout" },
+    "typography": { "$ref": "#/$defs/typography" },
+    "agentPolicy": { "$ref": "#/$defs/agentPolicy" }
+  },
+  "$defs": {
+    "publicId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$" },
+    "label": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "status": { "enum": ["active", "deprecated"] },
+    "tokenReference": {
+      "type": "string",
+      "pattern": "^color\\.[a-z0-9][a-z0-9_-]*\\.[a-z0-9][a-z0-9_-]*$"
+    },
+    "cssLength": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "hexColor": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$" },
+    "rampPosition": {
+      "enum": [
+        "000",
+        "050",
+        "100",
+        "150",
+        "200",
+        "250",
+        "300",
+        "350",
+        "400",
+        "450",
+        "500",
+        "550",
+        "600",
+        "650",
+        "700",
+        "750",
+        "800",
+        "850",
+        "900",
+        "950",
+        "1000"
+      ]
+    },
+    "anchorPosition": {
+      "enum": [
+        "000",
+        "050",
+        "100",
+        "200",
+        "300",
+        "400",
+        "500",
+        "600",
+        "700",
+        "800",
+        "900",
+        "950",
+        "1000"
+      ]
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "slug", "name"],
+      "properties": {
+        "id": { "$ref": "#/$defs/publicId" },
+        "slug": { "$ref": "#/$defs/publicId" },
+        "name": { "$ref": "#/$defs/label" },
+        "description": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accessibility", "targets", "authoring"],
+      "properties": {
+        "accessibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["level", "policy"],
+          "properties": {
+            "level": { "enum": ["AA", "AAA"] },
+            "policy": { "enum": ["warning", "block"] }
+          }
+        },
+        "targets": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["figmaModeLimit", "styleflowCli"],
+          "properties": {
+            "figmaModeLimit": { "type": "integer", "minimum": 1, "maximum": 10 },
+            "styleflowCli": { "const": "vnext" }
+          }
+        },
+        "authoring": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["setupStatus", "defaultIntensityPreset"],
+          "properties": {
+            "setupStatus": { "enum": ["incomplete", "complete"] },
+            "defaultIntensityPreset": { "enum": [1, 3, 5, 7, 9] }
+          }
+        }
+      }
+    },
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "polarity", "canvasToken", "tokenOverrides", "status"],
+      "properties": {
+        "id": { "$ref": "#/$defs/publicId" },
+        "label": { "$ref": "#/$defs/label" },
+        "parentId": { "$ref": "#/$defs/publicId" },
+        "polarity": { "enum": ["light", "dark", "custom"] },
+        "canvasToken": { "$ref": "#/$defs/tokenReference" },
+        "tokenOverrides": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/tokenReference" },
+          "additionalProperties": { "$ref": "#/$defs/hexColor" }
+        },
+        "status": { "$ref": "#/$defs/status" }
+      }
+    },
+    "oklch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["colorSpace", "lightness", "chroma", "hue", "alpha"],
+      "properties": {
+        "colorSpace": { "const": "oklch" },
+        "lightness": { "type": "number", "minimum": 0, "maximum": 1 },
+        "chroma": { "type": "number", "minimum": 0 },
+        "hue": { "type": "number" },
+        "alpha": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "authoredColor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "source"],
+      "properties": {
+        "value": { "$ref": "#/$defs/hexColor" },
+        "source": { "$ref": "#/$defs/oklch" }
+      }
+    },
+    "rampStop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["position", "value", "source"],
+      "properties": {
+        "position": { "$ref": "#/$defs/rampPosition" },
+        "value": { "$ref": "#/$defs/hexColor" },
+        "source": { "$ref": "#/$defs/oklch" },
+        "generated": { "type": "boolean" },
+        "overridden": { "type": "boolean" }
+      }
+    },
+    "rampGenerator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "mode",
+        "interpolation",
+        "gamutMapping",
+        "basePosition",
+        "lightnessMin",
+        "lightnessMax",
+        "saturationAdjustment"
+      ],
+      "properties": {
+        "algorithm": { "const": "styleflow-ramp-v2" },
+        "mode": { "enum": ["perceived", "linear"] },
+        "interpolation": { "const": "shorter-hue" },
+        "gamutMapping": { "const": "css-oklch-local-minde-v1" },
+        "basePosition": { "$ref": "#/$defs/anchorPosition" },
+        "lightnessMin": { "type": "number", "minimum": 0, "maximum": 1 },
+        "lightnessMax": { "type": "number", "minimum": 0, "maximum": 1 },
+        "saturationAdjustment": { "type": "number", "minimum": -1, "maximum": 1 }
+      }
+    },
+    "colorRamp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "baseColor", "generator", "stops", "status"],
+      "properties": {
+        "id": { "$ref": "#/$defs/publicId" },
+        "label": { "$ref": "#/$defs/label" },
+        "baseColor": { "$ref": "#/$defs/authoredColor" },
+        "generator": { "$ref": "#/$defs/rampGenerator" },
+        "stops": { "type": "array", "minItems": 13, "items": { "$ref": "#/$defs/rampStop" } },
+        "status": { "$ref": "#/$defs/status" }
+      }
+    },
+    "orderedEntity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "order", "status"],
+      "properties": {
+        "id": { "$ref": "#/$defs/publicId" },
+        "label": { "$ref": "#/$defs/label" },
+        "order": { "type": "integer", "minimum": 0 },
+        "status": { "$ref": "#/$defs/status" }
+      }
+    },
+    "intensityLevel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "order", "status"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^(base|soft-[1-9][0-9]*|strong-[1-9][0-9]*)$" },
+        "label": { "$ref": "#/$defs/label" },
+        "order": { "type": "integer", "minimum": 0 },
+        "status": { "$ref": "#/$defs/status" }
+      }
+    },
+    "intensityProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toneId", "levels", "mappingByTheme"],
+      "properties": {
+        "toneId": { "$ref": "#/$defs/publicId" },
+        "levels": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 21,
+          "items": { "$ref": "#/$defs/intensityLevel" }
+        },
+        "mappingByTheme": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#/$defs/rampPosition" }
+          }
+        }
+      }
+    },
+    "onColor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backgroundRef", "foreground", "border", "borderSoftDecorative", "provenance"],
+      "properties": {
+        "backgroundRef": { "$ref": "#/$defs/tokenReference" },
+        "foreground": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["primary", "secondary", "tertiary", "muted", "accent"],
+          "properties": {
+            "primary": { "$ref": "#/$defs/tokenReference" },
+            "secondary": { "$ref": "#/$defs/tokenReference" },
+            "tertiary": { "$ref": "#/$defs/tokenReference" },
+            "muted": { "$ref": "#/$defs/tokenReference" },
+            "accent": { "$ref": "#/$defs/tokenReference" }
+          }
+        },
+        "border": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["default", "soft", "strong"],
+          "properties": {
+            "default": { "$ref": "#/$defs/tokenReference" },
+            "soft": { "$ref": "#/$defs/tokenReference" },
+            "strong": { "$ref": "#/$defs/tokenReference" }
+          }
+        },
+        "borderSoftDecorative": { "type": "boolean" },
+        "compositeOn": { "$ref": "#/$defs/tokenReference" },
+        "provenance": { "enum": ["generated", "bulk", "manual"] }
+      }
+    },
+    "surface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toneId", "intensity", "backgrounds"],
+      "properties": {
+        "toneId": { "$ref": "#/$defs/publicId" },
+        "intensity": { "$ref": "#/$defs/publicId" },
+        "backgrounds": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["default", "raised", "sunken"],
+          "properties": {
+            "default": { "$ref": "#/$defs/tokenReference" },
+            "raised": { "$ref": "#/$defs/tokenReference" },
+            "sunken": { "$ref": "#/$defs/tokenReference" }
+          }
+        }
+      }
+    },
+    "focusRing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["colorRef", "width", "offset"],
+      "properties": {
+        "colorRef": { "$ref": "#/$defs/tokenReference" },
+        "width": { "$ref": "#/$defs/cssLength" },
+        "offset": { "$ref": "#/$defs/cssLength" }
+      }
+    },
+    "interactionState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backgroundRef", "foregroundRole", "borderRole"],
+      "properties": {
+        "backgroundRef": { "$ref": "#/$defs/tokenReference" },
+        "foregroundRole": { "enum": ["primary", "secondary", "tertiary", "muted", "accent"] },
+        "borderRole": { "enum": ["default", "soft", "strong"] },
+        "foregroundOverrideRef": { "$ref": "#/$defs/tokenReference" },
+        "borderOverrideRef": { "$ref": "#/$defs/tokenReference" },
+        "focusRing": { "$ref": "#/$defs/focusRing" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "interactionStates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default", "hover", "active", "focus-visible", "disabled"],
+      "properties": {
+        "default": { "$ref": "#/$defs/interactionState" },
+        "hover": { "$ref": "#/$defs/interactionState" },
+        "active": { "$ref": "#/$defs/interactionState" },
+        "focus-visible": { "$ref": "#/$defs/interactionState" },
+        "disabled": { "$ref": "#/$defs/interactionState" }
+      }
+    },
+    "interactionDefault": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["priorityId", "states"],
+      "properties": {
+        "priorityId": { "$ref": "#/$defs/publicId" },
+        "states": { "$ref": "#/$defs/interactionStates" }
+      }
+    },
+    "interactionOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "themeId",
+        "contextBackgroundRef",
+        "priorityId",
+        "state",
+        "values",
+        "provenance"
+      ],
+      "properties": {
+        "themeId": { "$ref": "#/$defs/publicId" },
+        "contextBackgroundRef": { "$ref": "#/$defs/tokenReference" },
+        "priorityId": { "$ref": "#/$defs/publicId" },
+        "state": { "enum": ["default", "hover", "active", "focus-visible", "disabled"] },
+        "values": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "backgroundRef": { "$ref": "#/$defs/tokenReference" },
+            "foregroundRole": { "enum": ["primary", "secondary", "tertiary", "muted", "accent"] },
+            "borderRole": { "enum": ["default", "soft", "strong"] },
+            "foregroundOverrideRef": { "$ref": "#/$defs/tokenReference" },
+            "borderOverrideRef": { "$ref": "#/$defs/tokenReference" },
+            "focusRing": { "$ref": "#/$defs/focusRing" },
+            "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "provenance": { "enum": ["generated", "bulk", "manual"] }
+      }
+    },
+    "colors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ramps", "intensityProfiles", "onColors", "surfaces", "interactions"],
+      "properties": {
+        "ramps": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/colorRamp" } },
+        "intensityProfiles": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/intensityProfile" }
+        },
+        "onColors": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/onColor" } },
+        "surfaces": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/surface" } },
+        "interactions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["priorities", "defaults", "overrides"],
+          "properties": {
+            "priorities": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/orderedEntity" }
+            },
+            "defaults": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/interactionDefault" }
+            },
+            "overrides": { "type": "array", "items": { "$ref": "#/$defs/interactionOverride" } }
+          }
+        }
+      }
+    },
+    "scaleEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "value", "order", "status"],
+      "properties": {
+        "id": { "$ref": "#/$defs/publicId" },
+        "label": { "$ref": "#/$defs/label" },
+        "value": { "$ref": "#/$defs/cssLength" },
+        "order": { "type": "integer", "minimum": 0 },
+        "status": { "$ref": "#/$defs/status" }
+      }
+    },
+    "breakpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "minWidth", "order", "status"],
+      "properties": {
+        "id": { "$ref": "#/$defs/publicId" },
+        "label": { "$ref": "#/$defs/label" },
+        "minWidth": { "type": "number", "minimum": 0 },
+        "order": { "type": "integer", "minimum": 0 },
+        "status": { "$ref": "#/$defs/status" }
+      }
+    },
+    "layoutValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scaleEntryId"],
+          "properties": { "scaleEntryId": { "$ref": "#/$defs/publicId" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inherit"],
+          "properties": { "inherit": { "const": true } }
+        }
+      ]
+    },
+    "layoutValues": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gap",
+        "paddingInline",
+        "paddingBlock",
+        "radius",
+        "borderWidth",
+        "containerMaxWidth"
+      ],
+      "properties": {
+        "gap": { "$ref": "#/$defs/layoutValue" },
+        "paddingInline": { "$ref": "#/$defs/layoutValue" },
+        "paddingBlock": { "$ref": "#/$defs/layoutValue" },
+        "radius": { "$ref": "#/$defs/layoutValue" },
+        "borderWidth": { "$ref": "#/$defs/layoutValue" },
+        "containerMaxWidth": { "$ref": "#/$defs/layoutValue" }
+      }
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scales", "recipes"],
+      "properties": {
+        "scales": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "gap",
+            "paddingInline",
+            "paddingBlock",
+            "radius",
+            "stroke",
+            "containerWidth",
+            "breakpoints"
+          ],
+          "properties": {
+            "gap": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/scaleEntry" } },
+            "paddingInline": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/scaleEntry" }
+            },
+            "paddingBlock": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/scaleEntry" }
+            },
+            "radius": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/scaleEntry" } },
+            "stroke": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/scaleEntry" } },
+            "containerWidth": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/scaleEntry" }
+            },
+            "breakpoints": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/breakpoint" }
+            }
+          }
+        },
+        "recipes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["role", "density", "valuesByBreakpoint"],
+            "properties": {
+              "role": {
+                "enum": [
+                  "none",
+                  "control",
+                  "chip",
+                  "item",
+                  "stack",
+                  "tile",
+                  "panel",
+                  "section",
+                  "region",
+                  "container"
+                ]
+              },
+              "density": { "enum": ["compact", "regular", "comfortable"] },
+              "valuesByBreakpoint": {
+                "type": "object",
+                "additionalProperties": { "$ref": "#/$defs/layoutValues" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "responsiveString": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["value"],
+          "properties": { "value": { "type": "string", "minLength": 1, "maxLength": 120 } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inherit"],
+          "properties": { "inherit": { "const": true } }
+        }
+      ]
+    },
+    "responsiveTextCase": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["value"],
+          "properties": { "value": { "enum": ["original", "uppercase", "lowercase", "title"] } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inherit"],
+          "properties": { "inherit": { "const": true } }
+        }
+      ]
+    },
+    "typographyValues": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fontSize", "lineHeight", "letterSpacing", "textCase"],
+      "properties": {
+        "fontSize": { "$ref": "#/$defs/responsiveString" },
+        "lineHeight": { "$ref": "#/$defs/responsiveString" },
+        "letterSpacing": { "$ref": "#/$defs/responsiveString" },
+        "textCase": { "$ref": "#/$defs/responsiveTextCase" }
+      }
+    },
+    "typography": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generator", "fontSlots", "types", "weights", "recipes"],
+      "properties": {
+        "generator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "baseSize",
+            "minRatio",
+            "maxRatio",
+            "minViewport",
+            "maxViewport",
+            "lineHeightStrategy"
+          ],
+          "properties": {
+            "baseSize": { "type": "number", "exclusiveMinimum": 0 },
+            "minRatio": { "type": "number", "minimum": 1 },
+            "maxRatio": { "type": "number", "minimum": 1 },
+            "minViewport": { "type": "number", "minimum": 0 },
+            "maxViewport": { "type": "number", "exclusiveMinimum": 0 },
+            "lineHeightStrategy": { "enum": ["tight-display-relaxed-body", "proportional"] }
+          }
+        },
+        "fontSlots": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "label", "familyStack", "status"],
+            "properties": {
+              "id": { "$ref": "#/$defs/publicId" },
+              "label": { "$ref": "#/$defs/label" },
+              "familyStack": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1, "maxLength": 120 }
+              },
+              "status": { "$ref": "#/$defs/status" }
+            }
+          }
+        },
+        "types": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "label", "group", "fontSlotId", "variants", "status"],
+            "properties": {
+              "id": { "$ref": "#/$defs/publicId" },
+              "label": { "$ref": "#/$defs/label" },
+              "group": { "type": "string", "minLength": 1, "maxLength": 80 },
+              "fontSlotId": { "$ref": "#/$defs/publicId" },
+              "variants": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "$ref": "#/$defs/orderedEntity" }
+              },
+              "status": { "$ref": "#/$defs/status" }
+            }
+          }
+        },
+        "weights": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "label", "order", "stylesByFontSlot", "status"],
+            "properties": {
+              "id": { "$ref": "#/$defs/publicId" },
+              "label": { "$ref": "#/$defs/label" },
+              "order": { "type": "integer", "minimum": 0 },
+              "stylesByFontSlot": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["fontWeight", "fontStyle"],
+                  "properties": {
+                    "fontWeight": { "type": "integer", "minimum": 1, "maximum": 1000 },
+                    "fontStyle": { "enum": ["normal", "italic", "oblique"] }
+                  }
+                }
+              },
+              "status": { "$ref": "#/$defs/status" }
+            }
+          }
+        },
+        "recipes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["tyId", "variantId", "weightId", "valuesByBreakpoint", "provenance"],
+            "properties": {
+              "tyId": { "$ref": "#/$defs/publicId" },
+              "variantId": { "$ref": "#/$defs/publicId" },
+              "weightId": { "$ref": "#/$defs/publicId" },
+              "valuesByBreakpoint": {
+                "type": "object",
+                "additionalProperties": { "$ref": "#/$defs/typographyValues" }
+              },
+              "provenance": { "enum": ["generated", "bulk", "manual"] }
+            }
+          }
+        }
+      }
+    },
+    "agentPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["disallowRawValues", "allowedAxes", "prohibitedProperties", "defaults"],
+      "properties": {
+        "disallowRawValues": { "type": "boolean" },
+        "allowedAxes": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "prohibitedProperties": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "defaults": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["layoutRole", "density", "typography"],
+          "properties": {
+            "layoutRole": {
+              "enum": ["none", "control", "chip", "item", "stack", "tile", "panel", "section", "region", "container"]
+            },
+            "density": { "enum": ["compact", "regular", "comfortable"] },
+            "typography": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["ty", "v", "w"],
+              "properties": {
+                "ty": { "$ref": "#/$defs/publicId" },
+                "v": { "$ref": "#/$defs/publicId" },
+                "w": { "$ref": "#/$defs/publicId" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "name": "@styleflow.app/contract",
+  "version": "1.0.0-beta.0",
+  "private": false,
+  "description": "Pure Styleflow vNext source, validation, compilation and deterministic bundle contract.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/StyleFlow-App/styleflow-contract.git",
+    "directory": "packages/contract"
+  },
+  "homepage": "https://github.com/StyleFlow-App/styleflow-contract#readme",
+  "bugs": {
+    "url": "https://github.com/StyleFlow-App/styleflow-contract/issues"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
+    },
+    "./schemas/*": "./schemas/*"
+  },
+  "files": [
+    "dist",
+    "schemas",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsup src/index.ts src/browser.ts --format esm --dts --clean",
+    "prepack": "pnpm build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@noble/hashes": "2.3.0",
+    "ajv": "8.20.0",
+    "colorjs.io": "0.7.1",
+    "fflate": "0.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "fast-check": "4.9.0",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}

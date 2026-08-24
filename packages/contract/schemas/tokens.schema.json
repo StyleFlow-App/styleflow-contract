@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.styleflow.app/v1/tokens.schema.json",
+  "title": "Styleflow DTCG Token Projection v1",
+  "$ref": "#/$defs/group",
+  "$defs": {
+    "group": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": { "$description": { "type": "string" }, "$type": { "type": "string" }, "$extensions": { "type": "object" } },
+      "patternProperties": { "^(?!\\$).+": { "oneOf": [{ "$ref": "#/$defs/group" }, { "$ref": "#/$defs/token" }] } },
+      "additionalProperties": false
+    },
+    "token": {
+      "type": "object",
+      "required": ["$value"],
+      "properties": {
+        "$value": {}, "$type": { "type": "string" }, "$description": { "type": "string" },
+        "$deprecated": { "oneOf": [{ "type": "boolean" }, { "type": "string" }] }, "$extensions": { "type": "object" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

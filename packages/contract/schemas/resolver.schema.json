@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.styleflow.app/v1/resolver.schema.json",
+  "title": "Styleflow Resolver Projection v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "sets", "resolutionOrder"],
+  "properties": {
+    "version": { "const": "2025.10" },
+    "sets": { "type": "object" },
+    "resolutionOrder": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["theme", "parent", "sets"],
+        "properties": {
+          "theme": { "type": "string" }, "parent": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+          "sets": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "styleflow-contract-workspace",
+  "private": true,
+  "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "pnpm --filter @styleflow.app/contract build",
+    "typecheck": "pnpm --filter @styleflow.app/contract typecheck",
+    "test": "pnpm --filter @styleflow.app/contract test",
+    "pack:contract": "pnpm --filter @styleflow.app/contract pack"
+  }
+}
