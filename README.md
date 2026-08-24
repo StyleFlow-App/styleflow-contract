@@ -26,6 +26,10 @@ tag against `packages/contract/package.json`, reruns all gates and publishes
 with npm provenance. Prereleases use the `next` dist-tag; stable releases use
 `latest`.
 
+The initial `1.0.0-beta.0` publication used a one-time authenticated
+bootstrap because npm requires a package to exist before its trusted publisher
+can be configured. All subsequent releases use only the OIDC workflow.
+
 ## License
 
 MIT.
