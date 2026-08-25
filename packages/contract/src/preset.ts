@@ -2,7 +2,7 @@ import { closestRampPosition, generateColorRamp, oklchSourceFromHex } from "./co
 import type {
   ColorRamp,
   Density,
-  InteractionDefaultRecipe,
+  InteractionRecipeDefinition,
   IntensityProfile,
   LayoutRecipe,
   LayoutRecipeBreakpointValues,
@@ -120,38 +120,38 @@ function onColor(backgroundRef: TokenReference, darkBackground: boolean): OnColo
   };
 }
 
-function interaction(priorityId: string, tone: string): InteractionDefaultRecipe {
+function interaction(priorityId: string, tone: string, order: number): InteractionRecipeDefinition {
   const role = priorityId === "primary" ? "primary" : "accent";
+  const state = (
+    reference: TokenReference,
+    foregroundRole: "primary" | "muted" | "accent",
+    borderRole: "default" | "soft" | "strong",
+    controlOpacity = 1,
+  ) => ({
+    background: { kind: "token" as const, reference, opacity: 1 },
+    foregroundRole,
+    border: { kind: "role" as const, role: borderRole },
+    focusRing: null,
+    controlOpacity,
+  });
   return {
-    priorityId,
+    id: `${priorityId}-default`,
+    label: `${priorityId[0]!.toUpperCase()}${priorityId.slice(1)} default`,
+    order,
+    status: "active",
     states: {
-      default: {
-        backgroundRef: semantic(tone, priorityId === "primary" ? "base" : "soft-2"),
-        foregroundRole: role,
-        borderRole: "default",
-      },
-      hover: {
-        backgroundRef: semantic(tone, priorityId === "primary" ? "strong-1" : "soft-1"),
-        foregroundRole: role,
-        borderRole: "strong",
-      },
-      active: {
-        backgroundRef: semantic(tone, "strong-2"),
-        foregroundRole: "primary",
-        borderRole: "strong",
-      },
+      default: state(semantic(tone, priorityId === "primary" ? "base" : "soft-2"), role, "default"),
+      hover: state(
+        semantic(tone, priorityId === "primary" ? "strong-1" : "soft-1"),
+        role,
+        "strong",
+      ),
+      active: state(semantic(tone, "strong-2"), "primary", "strong"),
       "focus-visible": {
-        backgroundRef: semantic(tone, priorityId === "primary" ? "base" : "soft-2"),
-        foregroundRole: role,
-        borderRole: "strong",
+        ...state(semantic(tone, priorityId === "primary" ? "base" : "soft-2"), role, "strong"),
         focusRing: { colorRef: semantic("accent", "strong-1"), width: "2px", offset: "2px" },
       },
-      disabled: {
-        backgroundRef: semantic("neutral", "soft-1"),
-        foregroundRole: "muted",
-        borderRole: "soft",
-        opacity: 0.62,
-      },
+      disabled: state(semantic("neutral", "soft-1"), "muted", "soft", 0.62),
     },
   };
 }
@@ -374,6 +374,28 @@ export function createPresetSource(): StyleflowProjectSource {
       weights.map((weight) => typographyRecipe(type.id, variantId, weight.id, size, type.group)),
     ),
   );
+  const surfaceRecipes = ramps.flatMap((item) =>
+    INTENSITIES.map((level) => ({
+      toneId: item.id,
+      intensity: level.id,
+      backgrounds: {
+        default: semantic(item.id, level.id),
+        raised: semantic(item.id, level.order === 0 ? level.id : INTENSITIES[level.order - 1]!.id),
+        sunken: semantic(
+          item.id,
+          level.order === INTENSITIES.length - 1 ? level.id : INTENSITIES[level.order + 1]!.id,
+        ),
+      },
+    })),
+  );
+  const interactionRecipes = [
+    interaction("primary", "main", 0),
+    interaction("secondary", "main", 1),
+    interaction("tertiary", "accent", 2),
+  ];
+  const interactionContexts = [
+    ...new Set(surfaceRecipes.flatMap((recipe) => Object.values(recipe.backgrounds))),
+  ];
 
   return {
     formatVersion: "1.0.0",
@@ -421,31 +443,21 @@ export function createPresetSource(): StyleflowProjectSource {
       onColors: ramps.flatMap((item) =>
         INTENSITIES.map((level, index) => onColor(semantic(item.id, level.id), index >= 2)),
       ),
-      surfaces: ramps.flatMap((item) =>
-        INTENSITIES.map((level) => ({
-          toneId: item.id,
-          intensity: level.id,
-          backgrounds: {
-            default: semantic(item.id, level.id),
-            raised: semantic(
-              item.id,
-              level.order === 0 ? level.id : INTENSITIES[level.order - 1]!.id,
-            ),
-            sunken: semantic(
-              item.id,
-              level.order === INTENSITIES.length - 1 ? level.id : INTENSITIES[level.order + 1]!.id,
-            ),
-          },
-        })),
-      ),
+      surfaces: surfaceRecipes,
       interactions: {
         priorities: DEFAULT_INTERACTION_PRIORITIES.map((item) => ({ ...item })),
-        defaults: [
-          interaction("primary", "main"),
-          interaction("secondary", "main"),
-          interaction("tertiary", "accent"),
-        ],
-        overrides: [],
+        recipes: interactionRecipes,
+        mappings: ["light", "dark", "high-contrast"].flatMap((themeId) =>
+          interactionContexts.flatMap((contextBackgroundRef) =>
+            DEFAULT_INTERACTION_PRIORITIES.map((priority) => ({
+              themeId,
+              contextBackgroundRef,
+              priorityId: priority.id,
+              recipeId: `${priority.id}-default`,
+              provenance: "generated" as const,
+            })),
+          ),
+        ),
       },
     },
     layout: {

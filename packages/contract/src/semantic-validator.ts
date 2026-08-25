@@ -72,14 +72,11 @@ function validateCore(source: StyleflowProjectSource): Diagnostic[] {
       "colors/interactions/priorities",
       source.colors.interactions.priorities.map((item) => item.id),
     ],
+    ["colors/interactions/recipes", source.colors.interactions.recipes.map((item) => item.id)],
     [
-      "colors/interactions/defaults",
-      source.colors.interactions.defaults.map((item) => item.priorityId),
-    ],
-    [
-      "colors/interactions/overrides",
-      source.colors.interactions.overrides.map(
-        (item) => `${item.themeId}:${item.contextBackgroundRef}:${item.priorityId}:${item.state}`,
+      "colors/interactions/mappings",
+      source.colors.interactions.mappings.map(
+        (item) => `${item.themeId}:${item.contextBackgroundRef}:${item.priorityId}`,
       ),
     ],
     ["layout/recipes", source.layout.recipes.map((item) => `${item.role}:${item.density}`)],
@@ -438,10 +435,15 @@ function validateColors(source: StyleflowProjectSource): Diagnostic[] {
 function validateInteractions(source: StyleflowProjectSource): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const priorityIds = new Set(source.colors.interactions.priorities.map((item) => item.id));
+  const recipeIds = new Set(source.colors.interactions.recipes.map((item) => item.id));
   const themeIds = new Set(source.themes.map((item) => item.id));
   const onColorRefs = new Set(source.colors.onColors.map((item) => item.backgroundRef));
-  const orders = source.colors.interactions.priorities.map((item) => item.order);
-  if (new Set(orders).size !== orders.length)
+  const contextRefs = new Set(
+    source.colors.surfaces.flatMap((surface) => Object.values(surface.backgrounds)),
+  );
+  const priorityOrders = source.colors.interactions.priorities.map((item) => item.order);
+  const recipeOrders = source.colors.interactions.recipes.map((item) => item.order);
+  if (new Set(priorityOrders).size !== priorityOrders.length)
     diagnostics.push(
       problem(
         "SF_INTERACTION_ORDER_DUPLICATE",
@@ -449,55 +451,102 @@ function validateInteractions(source: StyleflowProjectSource): Diagnostic[] {
         "Interaction priority order values must be unique.",
       ),
     );
-  for (const priority of source.colors.interactions.priorities) {
-    const recipe = source.colors.interactions.defaults.find(
-      (item) => item.priorityId === priority.id,
+  if (new Set(recipeOrders).size !== recipeOrders.length)
+    diagnostics.push(
+      problem(
+        "SF_INTERACTION_RECIPE_ORDER_DUPLICATE",
+        "/colors/interactions/recipes",
+        "Interaction recipe order values must be unique.",
+      ),
     );
-    if (!recipe)
-      diagnostics.push(
-        problem(
-          "SF_INTERACTION_DEFAULT_MISSING",
-          "/colors/interactions/defaults",
-          `Priority "${priority.id}" has no default recipe.`,
-        ),
-      );
-    else
-      for (const state of INTERACTION_STATES)
-        if (!recipe.states[state])
-          diagnostics.push(
-            problem(
-              "SF_INTERACTION_STATE_MISSING",
-              `/colors/interactions/defaults/${priority.id}/states/${state}`,
-              `Interaction state "${priority.id}.${state}" is not covered.`,
-            ),
-          );
+  for (const [recipeIndex, recipe] of source.colors.interactions.recipes.entries()) {
+    for (const state of INTERACTION_STATES) {
+      const stateRecipe = recipe.states[state];
+      if (!stateRecipe)
+        diagnostics.push(
+          problem(
+            "SF_INTERACTION_STATE_MISSING",
+            `/colors/interactions/recipes/${recipeIndex}/states/${state}`,
+            `Interaction recipe "${recipe.id}" does not cover state "${state}".`,
+          ),
+        );
+      else if (state === "focus-visible" && recipe.status === "active" && !stateRecipe.focusRing)
+        diagnostics.push(
+          problem(
+            "SF_INTERACTION_FOCUS_RING_REQUIRED",
+            `/colors/interactions/recipes/${recipeIndex}/states/focus-visible/focusRing`,
+            `Active recipe "${recipe.id}" requires a focus-visible indicator.`,
+          ),
+        );
+      if (
+        stateRecipe?.background.kind === "token" &&
+        !onColorRefs.has(stateRecipe.background.reference)
+      )
+        diagnostics.push(
+          problem(
+            "SF_INTERACTION_BACKGROUND_CONTRACT_MISSING",
+            `/colors/interactions/recipes/${recipeIndex}/states/${state}/background/reference`,
+            `Control background "${stateRecipe.background.reference}" has no on-color contract.`,
+          ),
+        );
+    }
   }
-  for (const [index, override] of source.colors.interactions.overrides.entries()) {
-    if (!themeIds.has(override.themeId))
+  for (const [index, mapping] of source.colors.interactions.mappings.entries()) {
+    if (!themeIds.has(mapping.themeId))
       diagnostics.push(
         problem(
-          "SF_INTERACTION_OVERRIDE_THEME_MISSING",
-          `/colors/interactions/overrides/${index}/themeId`,
-          `Override references missing theme "${override.themeId}".`,
+          "SF_INTERACTION_MAPPING_THEME_MISSING",
+          `/colors/interactions/mappings/${index}/themeId`,
+          `Mapping references missing theme "${mapping.themeId}".`,
         ),
       );
-    if (!priorityIds.has(override.priorityId))
+    if (!priorityIds.has(mapping.priorityId))
       diagnostics.push(
         problem(
-          "SF_INTERACTION_OVERRIDE_PRIORITY_MISSING",
-          `/colors/interactions/overrides/${index}/priorityId`,
-          `Override references missing priority "${override.priorityId}".`,
+          "SF_INTERACTION_MAPPING_PRIORITY_MISSING",
+          `/colors/interactions/mappings/${index}/priorityId`,
+          `Mapping references missing priority "${mapping.priorityId}".`,
         ),
       );
-    if (!onColorRefs.has(override.contextBackgroundRef))
+    if (!recipeIds.has(mapping.recipeId))
+      diagnostics.push(
+        problem(
+          "SF_INTERACTION_MAPPING_RECIPE_MISSING",
+          `/colors/interactions/mappings/${index}/recipeId`,
+          `Mapping references missing recipe "${mapping.recipeId}".`,
+        ),
+      );
+    if (!contextRefs.has(mapping.contextBackgroundRef))
       diagnostics.push(
         problem(
           "SF_INTERACTION_CONTEXT_MISSING",
-          `/colors/interactions/overrides/${index}/contextBackgroundRef`,
-          `Context background "${override.contextBackgroundRef}" has no on-color contract.`,
+          `/colors/interactions/mappings/${index}/contextBackgroundRef`,
+          `Context background "${mapping.contextBackgroundRef}" is not referenced by a surface.`,
         ),
       );
   }
+  const mappingKeys = new Set(
+    source.colors.interactions.mappings.map(
+      (mapping) => `${mapping.themeId}:${mapping.contextBackgroundRef}:${mapping.priorityId}`,
+    ),
+  );
+  for (const theme of source.themes.filter((item) => item.status === "active"))
+    for (const contextBackgroundRef of contextRefs)
+      for (const priority of source.colors.interactions.priorities.filter(
+        (item) => item.status === "active",
+      )) {
+        const key = `${theme.id}:${contextBackgroundRef}:${priority.id}`;
+        if (!mappingKeys.has(key))
+          diagnostics.push(
+            problem(
+              "SF_INTERACTION_MAPPING_MISSING",
+              `/colors/interactions/mappings/${key}`,
+              `Interaction mapping "${key}" is required.`,
+              "Assign one recipe explicitly before publishing.",
+              [theme.id],
+            ),
+          );
+      }
   return diagnostics;
 }
 

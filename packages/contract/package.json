@@ -1,6 +1,6 @@
 {
   "name": "@styleflow.app/contract",
-  "version": "1.0.0-beta.0",
+  "version": "1.0.0-beta.1",
   "private": false,
   "description": "Pure Styleflow vNext source, validation, compilation and deterministic bundle contract.",
   "license": "MIT",

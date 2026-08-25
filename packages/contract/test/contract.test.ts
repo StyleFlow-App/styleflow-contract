@@ -14,6 +14,7 @@ import {
   createPresetSource,
   generateColorRamp,
   importBundle,
+  INTERACTION_STATES,
   interpolateOklch,
   materializeIntermediateStop,
   oklchSourceFromHex,
@@ -121,11 +122,16 @@ describe("granular operation boundary", () => {
           },
         },
         {
-          type: "delete-interaction-override",
-          themeId: "dark",
-          contextBackgroundRef: "color.main.base",
-          priorityId: "primary",
-          state: "hover",
+          type: "set-interaction-mappings",
+          mappings: [
+            {
+              themeId: "dark",
+              contextBackgroundRef: "color.main.base",
+              priorityId: "primary",
+              recipeId: "primary-default",
+              provenance: "manual",
+            },
+          ],
         },
       ]).success,
     ).toBe(true);
@@ -152,13 +158,18 @@ describe("granular operation boundary", () => {
     ).toEqual(["/layout/recipes/panel:regular/md/gap"]);
     expect(
       affectedPaths({
-        type: "delete-interaction-override",
-        themeId: "dark",
-        contextBackgroundRef: "color.main.base",
-        priorityId: "primary",
-        state: "hover",
+        type: "set-interaction-mappings",
+        mappings: [
+          {
+            themeId: "dark",
+            contextBackgroundRef: "color.main.base",
+            priorityId: "primary",
+            recipeId: "primary-default",
+            provenance: "manual",
+          },
+        ],
       }),
-    ).toEqual(["/colors/interactions/overrides/dark:color.main.base:primary:hover"]);
+    ).toEqual(["/colors/interactions/mappings/dark:color.main.base:primary"]);
   });
 });
 
@@ -221,6 +232,20 @@ describe("color CRUD and dependency remap", () => {
       next.colors.onColors.filter((item) => item.backgroundRef.startsWith("color.success.")),
     ).toHaveLength(5);
     expect(next.colors.surfaces.filter((item) => item.toneId === "success")).toHaveLength(5);
+  });
+
+  it("deletes an unreferenced generated tone together with its interaction contexts", () => {
+    const source = createPresetSource();
+    const template = structuredClone(source.colors.ramps[0]!) as ColorRamp;
+    template.id = "temporary";
+    template.label = "Temporary";
+    const created = applyDraftOperations(source, [{ type: "create-color-ramp", ramp: template }]);
+    const deleted = applyDraftOperations(created, [
+      { type: "delete-color-ramp", toneId: "temporary", replacementToneId: "main" },
+    ]);
+
+    expect(deleted.colors.ramps.some((item) => item.id === "temporary")).toBe(false);
+    expect(JSON.stringify(deleted)).not.toContain("color.temporary.");
   });
 
   it("requires Replace & delete for referenced tones and remaps atomically", () => {
@@ -384,32 +409,38 @@ describe("color CRUD and dependency remap", () => {
 });
 
 describe("contextual interactions", () => {
-  it("supports custom priorities and exact theme/background override precedence", () => {
+  it("supports reusable recipes and exact theme/background mappings", () => {
     const source = createPresetSource();
-    const base = structuredClone(source.colors.interactions.defaults[0]!);
-    base.priorityId = "quaternary";
+    const base = structuredClone(source.colors.interactions.recipes[0]!);
+    base.id = "critical-action";
+    base.label = "Critical action";
+    base.order = 3;
+    base.states.hover.background = {
+      kind: "token",
+      reference: "color.critical.strong-2",
+      opacity: 1,
+    };
+    const contextBackgroundRef = "color.neutral.soft-2" as const;
     const withPriority = applyDraftOperations(source, [
+      { type: "upsert-interaction-recipe", recipe: base },
       {
         type: "upsert-interaction-priority",
         priority: { id: "quaternary", label: "Quaternary", order: 3, status: "active" },
-        defaultRecipe: base,
       },
-    ]);
-    const contextBackgroundRef = "color.neutral.soft-2" as const;
-    const overridden = applyDraftOperations(withPriority, [
       {
-        type: "set-interaction-override",
-        override: {
-          themeId: "dark",
-          contextBackgroundRef,
-          priorityId: "primary",
-          state: "hover",
-          values: { backgroundRef: "color.critical.strong-2" },
-          provenance: "manual",
-        },
+        type: "set-interaction-mappings",
+        mappings: [
+          {
+            themeId: "dark",
+            contextBackgroundRef,
+            priorityId: "primary",
+            recipeId: "critical-action",
+            provenance: "manual",
+          },
+        ],
       },
     ]);
-    const compiled = compileProject(overridden);
+    const compiled = compileProject(withPriority);
     const dark = compiled.themes
       .find((item) => item.id === "dark")!
       .interactions.find(
@@ -422,10 +453,161 @@ describe("contextual interactions", () => {
         (item) =>
           item.contextBackgroundRef === contextBackgroundRef && item.priorityId === "primary",
       )!;
-    expect(dark.states.hover.background.reference).toBe("color.critical.strong-2");
+    expect(dark.states.hover.background?.reference).toBe("color.critical.strong-2");
+    expect(dark.states.hover.recipeId).toBe("critical-action");
     expect(dark.states.hover.provenance).toBe("manual");
-    expect(light.states.hover.background.reference).toBe("color.main.strong-1");
-    expect(compiled.themes[0]!.interactions).toHaveLength(overridden.colors.onColors.length * 4);
+    expect(light.states.hover.background?.reference).toBe("color.main.strong-1");
+    expect(compiled.themes[0]!.interactions).toHaveLength(
+      new Set(withPriority.colors.surfaces.flatMap((item) => Object.values(item.backgrounds)))
+        .size * 4,
+    );
+  });
+
+  it("resolves transparent controls from the parent on-color contract", () => {
+    const source = createPresetSource();
+    const plain = structuredClone(source.colors.interactions.recipes[0]!);
+    plain.id = "plain";
+    plain.label = "Plain";
+    plain.order = 3;
+    for (const state of INTERACTION_STATES) {
+      plain.states[state].background = { kind: "none" };
+      plain.states[state].border = { kind: "none" };
+    }
+    const contextBackgroundRef = "color.neutral.soft-2" as const;
+    const next = applyDraftOperations(source, [
+      { type: "upsert-interaction-recipe", recipe: plain },
+      {
+        type: "set-interaction-mappings",
+        mappings: [
+          {
+            themeId: "light",
+            contextBackgroundRef,
+            priorityId: "tertiary",
+            recipeId: "plain",
+            provenance: "manual",
+          },
+        ],
+      },
+    ]);
+    const resolved = compileProject(next).themes[0]!.interactions.find(
+      (item) =>
+        item.contextBackgroundRef === contextBackgroundRef && item.priorityId === "tertiary",
+    )!.states.default;
+    expect(resolved.background).toBeNull();
+    expect(resolved.border).toBeNull();
+    expect(resolved.roleSourceBackgroundRef).toBe(contextBackgroundRef);
+    expect(resolved.foreground.reference).toBe(
+      compileProject(next).themes[0]!.onColors.find(
+        (item) => item.backgroundRef === contextBackgroundRef,
+      )!.foreground.primary.reference,
+    );
+  });
+
+  it("enforces foreground contrast for deliberately transparent borderless controls", () => {
+    const source = createPresetSource();
+    const plain = structuredClone(source.colors.interactions.recipes[0]!);
+    plain.id = "transparent-failure";
+    plain.order = 3;
+    plain.states.default.background = { kind: "none" };
+    plain.states.default.border = { kind: "none" };
+    plain.states.default.foregroundOverrideRef = "color.neutral.soft-2";
+    const next = applyDraftOperations(source, [
+      { type: "upsert-interaction-recipe", recipe: plain },
+      {
+        type: "set-interaction-mappings",
+        mappings: [
+          {
+            themeId: "light",
+            contextBackgroundRef: "color.neutral.soft-2",
+            priorityId: "tertiary",
+            recipeId: plain.id,
+            provenance: "manual",
+          },
+        ],
+      },
+    ]);
+    const compiled = compileProject(next);
+
+    expect(compiled.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "SF_CONTRAST_TEXT",
+          path: expect.stringContaining("color.neutral.soft-2/tertiary/default/foreground"),
+        }),
+      ]),
+    );
+    expect(compiled.diagnostics).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: expect.stringContaining("color.neutral.soft-2/tertiary/default/context"),
+        }),
+      ]),
+    );
+  });
+
+  it("remaps recipe deletion, removes priority dimensions and clones theme mappings", () => {
+    const source = createPresetSource();
+    expect(() =>
+      applyDraftOperations(source, [
+        { type: "delete-interaction-recipe", recipeId: "primary-default" },
+      ]),
+    ).toThrow(/Replace & delete/);
+
+    const nextTheme = structuredClone(source.themes[0]!);
+    nextTheme.id = "light-alt";
+    nextTheme.label = "Light alt";
+    nextTheme.parentId = "light";
+    const withTheme = applyDraftOperations(source, [{ type: "upsert-theme", theme: nextTheme }]);
+    const cloned = withTheme.colors.interactions.mappings.filter(
+      (mapping) => mapping.themeId === "light-alt",
+    );
+    expect(cloned).toHaveLength(
+      new Set(withTheme.colors.surfaces.flatMap((surface) => Object.values(surface.backgrounds)))
+        .size * 3,
+    );
+    expect(cloned.every((mapping) => mapping.provenance === "generated")).toBe(true);
+
+    const changed = applyDraftOperations(withTheme, [
+      {
+        type: "delete-interaction-recipe",
+        recipeId: "primary-default",
+        replacementRecipeId: "secondary-default",
+      },
+      { type: "delete-interaction-priority", priorityId: "tertiary" },
+    ]);
+    expect(
+      changed.colors.interactions.recipes.some((recipe) => recipe.id === "primary-default"),
+    ).toBe(false);
+    expect(
+      changed.colors.interactions.mappings.some(
+        (mapping) => mapping.recipeId === "primary-default",
+      ),
+    ).toBe(false);
+    expect(
+      changed.colors.interactions.mappings.some((mapping) => mapping.priorityId === "tertiary"),
+    ).toBe(false);
+    expect(validateProjectSource(changed).valid).toBe(true);
+  });
+
+  it("rejects incomplete mappings and invalid opacity combinations", () => {
+    const source = createPresetSource();
+    source.colors.interactions.mappings.pop();
+    expect(validateProjectSource(source).diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "SF_INTERACTION_MAPPING_MISSING" })]),
+    );
+    const invalid = createPresetSource() as unknown as Record<string, unknown>;
+    const interactions = (invalid.colors as StyleflowProjectSource["colors"]).interactions;
+    interactions.recipes[0]!.states.default.background = {
+      kind: "token",
+      reference: "color.main.base",
+      opacity: 0,
+    };
+    expect(validateProjectSource(invalid).valid).toBe(false);
+
+    const legacy = createPresetSource() as unknown as Record<string, unknown>;
+    const legacyColors = legacy.colors as Record<string, unknown>;
+    legacyColors.interactions = { priorities: [], defaults: [], overrides: [] };
+    expect(validateProjectSource(legacy).valid).toBe(false);
   });
 
   it("materializes every state and contextual contrast metrics", () => {
@@ -439,6 +621,7 @@ describe("contextual interactions", () => {
     ]);
     expect(interaction.states.default.contextBackground.value).toMatch(/^#/);
     expect(interaction.states.default.backgroundContextRatio).toBeGreaterThanOrEqual(1);
+    expect(interaction.states.default.background?.compositedValue).toMatch(/^#/);
     expect(interaction.states["focus-visible"].focusRing).toEqual(
       expect.objectContaining({
         controlRatio: expect.any(Number),
@@ -681,7 +864,7 @@ describe("deterministic bundle", () => {
     const manifest = JSON.parse(new TextDecoder().decode(entries["styleflow.manifest.json"])) as {
       compiler: { version: string };
     };
-    expect(manifest.compiler.version).toBe("1.0.0-beta.0");
+    expect(manifest.compiler.version).toBe("1.0.0-beta.1");
     const imported = importBundle(first.bytes);
     expect(imported.contract.axes.layout.roles).toContain("stack");
     expect(imported.contract.axes.layout.roles).toContain("tile");

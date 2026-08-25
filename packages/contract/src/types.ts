@@ -1,8 +1,8 @@
 export const CONTRACT_PACKAGE_NAME = "@styleflow.app/contract" as const;
-export const CONTRACT_VERSION = "1.0.0-beta.0" as const;
+export const CONTRACT_VERSION = "1.0.0-beta.1" as const;
 export const FORMAT_VERSION = "1.0.0" as const;
 export const BUNDLE_VERSION = "1.0.0" as const;
-export const OPERATION_PROTOCOL_VERSION = "1.0.0" as const;
+export const OPERATION_PROTOCOL_VERSION = "1.0.0-beta.1" as const;
 
 export const ANCHOR_POSITIONS = [
   "000",
@@ -186,14 +186,17 @@ export interface FocusRingRecipe {
   width: CssLength;
   offset: CssLength;
 }
+export type InteractionBackground =
+  { kind: "none" } | { kind: "token"; reference: TokenReference; opacity: number };
+export type InteractionBorder =
+  { kind: "none" } | { kind: "role"; role: BorderRole; overrideRef?: TokenReference };
 export interface InteractionStateRecipe {
-  backgroundRef: TokenReference;
+  background: InteractionBackground;
   foregroundRole: ForegroundRole;
-  borderRole: BorderRole;
   foregroundOverrideRef?: TokenReference;
-  borderOverrideRef?: TokenReference;
-  focusRing?: FocusRingRecipe;
-  opacity?: number;
+  border: InteractionBorder;
+  focusRing: FocusRingRecipe | null;
+  controlOpacity: number;
 }
 
 export interface InteractionPriorityDefinition {
@@ -202,22 +205,24 @@ export interface InteractionPriorityDefinition {
   order: number;
   status: EntityStatus;
 }
-export interface InteractionDefaultRecipe {
-  priorityId: string;
+export interface InteractionRecipeDefinition {
+  id: string;
+  label: string;
+  order: number;
+  status: EntityStatus;
   states: Record<InteractionState, InteractionStateRecipe>;
 }
-export interface InteractionContextOverride {
+export interface InteractionRecipeMapping {
   themeId: string;
   contextBackgroundRef: TokenReference;
   priorityId: string;
-  state: InteractionState;
-  values: Partial<InteractionStateRecipe>;
+  recipeId: string;
   provenance: Exclude<Provenance, "parent">;
 }
 export interface InteractionSettings {
   priorities: InteractionPriorityDefinition[];
-  defaults: InteractionDefaultRecipe[];
-  overrides: InteractionContextOverride[];
+  recipes: InteractionRecipeDefinition[];
+  mappings: InteractionRecipeMapping[];
 }
 
 export interface BreakpointDefinition {
@@ -380,8 +385,14 @@ export interface ResolvedSurface {
   backgrounds: Record<SurfaceRole, { reference: TokenReference; value: string }>;
 }
 export interface ResolvedInteractionState {
-  background: { reference: TokenReference; value: string };
+  background: {
+    reference: TokenReference;
+    value: string;
+    opacity: number;
+    compositedValue: string;
+  } | null;
   contextBackground: { reference: TokenReference; value: string };
+  roleSourceBackgroundRef: TokenReference;
   foreground: { reference: TokenReference; value: string; role: ForegroundRole; ratio: number };
   border: {
     reference: TokenReference;
@@ -389,7 +400,7 @@ export interface ResolvedInteractionState {
     role: BorderRole;
     ratio: number;
     contextRatio: number;
-  };
+  } | null;
   backgroundContextRatio: number;
   focusRing?: {
     reference: TokenReference;
@@ -399,7 +410,8 @@ export interface ResolvedInteractionState {
     controlRatio: number;
     contextRatio: number;
   };
-  opacity?: number;
+  controlOpacity: number;
+  recipeId: string;
   provenance: Provenance;
 }
 export interface ResolvedInteraction {
@@ -514,6 +526,10 @@ export interface CompiledProject {
     customThemes: boolean;
     asymmetricIntensity: boolean;
     contextualInteractions: boolean;
+    interactionRecipes: boolean;
+    transparentInteractionBackgrounds: boolean;
+    interactionBackgroundOpacity: boolean;
+    borderlessInteractions: boolean;
     fluidTypography: boolean;
     breakpointCount: number;
     typographyTokenCount: number;
@@ -595,23 +611,15 @@ export type DraftOperation =
   | {
       type: "upsert-interaction-priority";
       priority: InteractionPriorityDefinition;
-      defaultRecipe?: InteractionDefaultRecipe;
     }
-  | { type: "delete-interaction-priority"; priorityId: string; replacementPriorityId?: string }
+  | { type: "delete-interaction-priority"; priorityId: string }
+  | { type: "upsert-interaction-recipe"; recipe: InteractionRecipeDefinition }
   | {
-      type: "set-interaction-default";
-      priorityId: string;
-      state: InteractionState;
-      recipe: InteractionStateRecipe;
+      type: "delete-interaction-recipe";
+      recipeId: string;
+      replacementRecipeId?: string;
     }
-  | { type: "set-interaction-override"; override: InteractionContextOverride }
-  | {
-      type: "delete-interaction-override";
-      themeId: string;
-      contextBackgroundRef: TokenReference;
-      priorityId: string;
-      state: InteractionState;
-    }
+  | { type: "set-interaction-mappings"; mappings: InteractionRecipeMapping[] }
   | { type: "upsert-layout-scale-entry"; scale: LayoutScaleName; entry: ScaleEntry }
   | {
       type: "delete-layout-scale-entry";

@@ -1,11 +1,5 @@
 import type { DraftOperation, OnColorRolePath, TokenReference } from "./types";
-import {
-  ANCHOR_POSITIONS,
-  BORDER_ROLES,
-  FOREGROUND_ROLES,
-  INTERACTION_STATES,
-  INTERMEDIATE_POSITIONS,
-} from "./types";
+import { ANCHOR_POSITIONS, BORDER_ROLES, FOREGROUND_ROLES, INTERMEDIATE_POSITIONS } from "./types";
 
 const TOKEN_REFERENCE_PATTERN = /^color\.[a-z0-9][a-z0-9_-]*\.[a-z0-9][a-z0-9_-]*$/;
 const IDENTIFIER_PATTERN = /^[a-z0-9][a-z0-9_-]{0,127}$/;
@@ -34,9 +28,9 @@ const SUPPORTED_TYPES = new Set<DraftOperation["type"]>([
   "set-surface-recipe",
   "upsert-interaction-priority",
   "delete-interaction-priority",
-  "set-interaction-default",
-  "set-interaction-override",
-  "delete-interaction-override",
+  "upsert-interaction-recipe",
+  "delete-interaction-recipe",
+  "set-interaction-mappings",
   "upsert-layout-scale-entry",
   "delete-layout-scale-entry",
   "upsert-breakpoint",
@@ -207,35 +201,28 @@ function structurallyValid(value: Record<string, unknown>): boolean {
     case "set-surface-recipe":
       return isRecord(value.recipe) && validIds(value.recipe, "toneId", "intensity");
     case "upsert-interaction-priority":
-      return (
-        isRecord(value.priority) &&
-        isIdentifier(value.priority.id) &&
-        (value.defaultRecipe === undefined || isRecord(value.defaultRecipe))
-      );
+      return isRecord(value.priority) && isIdentifier(value.priority.id);
     case "delete-interaction-priority":
+      return isIdentifier(value.priorityId);
+    case "upsert-interaction-recipe":
       return (
-        isIdentifier(value.priorityId) &&
-        (value.replacementPriorityId === undefined || isIdentifier(value.replacementPriorityId))
+        isRecord(value.recipe) && isIdentifier(value.recipe.id) && isRecord(value.recipe.states)
       );
-    case "set-interaction-default":
+    case "delete-interaction-recipe":
       return (
-        validIds(value, "priorityId") &&
-        typeof value.state === "string" &&
-        INTERACTION_STATES.includes(value.state as never) &&
-        isRecord(value.recipe)
+        isIdentifier(value.recipeId) &&
+        (value.replacementRecipeId === undefined || isIdentifier(value.replacementRecipeId))
       );
-    case "set-interaction-override":
+    case "set-interaction-mappings":
       return (
-        isRecord(value.override) &&
-        validIds(value.override, "themeId", "priorityId") &&
-        isTokenReference(value.override.contextBackgroundRef)
-      );
-    case "delete-interaction-override":
-      return (
-        validIds(value, "themeId", "priorityId") &&
-        isTokenReference(value.contextBackgroundRef) &&
-        typeof value.state === "string" &&
-        INTERACTION_STATES.includes(value.state as never)
+        Array.isArray(value.mappings) &&
+        value.mappings.length <= 10_000 &&
+        value.mappings.every(
+          (mapping) =>
+            isRecord(mapping) &&
+            validIds(mapping, "themeId", "priorityId", "recipeId") &&
+            isTokenReference(mapping.contextBackgroundRef),
+        )
       );
     case "upsert-layout-scale-entry":
       return (

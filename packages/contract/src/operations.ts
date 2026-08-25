@@ -252,11 +252,12 @@ function replaceToneRef(reference: TokenReference, from: string, to: string): To
 }
 
 function remapRecipeReferences(recipe: InteractionStateRecipe, from: string, to: string): void {
-  recipe.backgroundRef = replaceToneRef(recipe.backgroundRef, from, to);
+  if (recipe.background.kind === "token")
+    recipe.background.reference = replaceToneRef(recipe.background.reference, from, to);
   if (recipe.foregroundOverrideRef)
     recipe.foregroundOverrideRef = replaceToneRef(recipe.foregroundOverrideRef, from, to);
-  if (recipe.borderOverrideRef)
-    recipe.borderOverrideRef = replaceToneRef(recipe.borderOverrideRef, from, to);
+  if (recipe.border.kind === "role" && recipe.border.overrideRef)
+    recipe.border.overrideRef = replaceToneRef(recipe.border.overrideRef, from, to);
   if (recipe.focusRing)
     recipe.focusRing.colorRef = replaceToneRef(recipe.focusRing.colorRef, from, to);
 }
@@ -272,7 +273,9 @@ function remapToneReferences(source: StyleflowProjectSource, from: string, to: s
     );
   }
   for (const contract of source.colors.onColors) {
-    contract.backgroundRef = replaceToneRef(contract.backgroundRef, from, to);
+    const ownedByDeletedTone = contract.backgroundRef.startsWith(`color.${from}.`);
+    if (!ownedByDeletedTone)
+      contract.backgroundRef = replaceToneRef(contract.backgroundRef, from, to);
     for (const role of FOREGROUND_ROLES)
       contract.foreground[role] = replaceToneRef(contract.foreground[role], from, to);
     for (const role of BORDER_ROLES)
@@ -282,20 +285,70 @@ function remapToneReferences(source: StyleflowProjectSource, from: string, to: s
   for (const surface of source.colors.surfaces)
     for (const role of SURFACE_ROLES)
       surface.backgrounds[role] = replaceToneRef(surface.backgrounds[role], from, to);
-  for (const interaction of source.colors.interactions.defaults)
+  for (const interaction of source.colors.interactions.recipes)
     for (const state of INTERACTION_STATES)
       remapRecipeReferences(interaction.states[state], from, to);
-  for (const override of source.colors.interactions.overrides) {
-    override.contextBackgroundRef = replaceToneRef(override.contextBackgroundRef, from, to);
-    const recipe = override.values as Partial<InteractionStateRecipe>;
-    if (recipe.backgroundRef) recipe.backgroundRef = replaceToneRef(recipe.backgroundRef, from, to);
-    if (recipe.foregroundOverrideRef)
-      recipe.foregroundOverrideRef = replaceToneRef(recipe.foregroundOverrideRef, from, to);
-    if (recipe.borderOverrideRef)
-      recipe.borderOverrideRef = replaceToneRef(recipe.borderOverrideRef, from, to);
-    if (recipe.focusRing)
-      recipe.focusRing.colorRef = replaceToneRef(recipe.focusRing.colorRef, from, to);
-  }
+  for (const mapping of source.colors.interactions.mappings)
+    mapping.contextBackgroundRef = replaceToneRef(mapping.contextBackgroundRef, from, to);
+}
+
+function reconcileInteractionMappings(source: StyleflowProjectSource): void {
+  const contexts = [
+    ...new Set(source.colors.surfaces.flatMap((surface) => Object.values(surface.backgrounds))),
+  ];
+  const themeIds = new Set(source.themes.map((theme) => theme.id));
+  const priorityIds = new Set(source.colors.interactions.priorities.map((priority) => priority.id));
+  const recipeIds = new Set(source.colors.interactions.recipes.map((recipe) => recipe.id));
+  if (recipeIds.size === 0) throw new Error("A project must keep at least one interaction recipe");
+  const contextIds = new Set(contexts);
+  source.colors.interactions.mappings = [
+    ...new Map(
+      source.colors.interactions.mappings
+        .filter(
+          (mapping) =>
+            themeIds.has(mapping.themeId) &&
+            priorityIds.has(mapping.priorityId) &&
+            recipeIds.has(mapping.recipeId) &&
+            contextIds.has(mapping.contextBackgroundRef),
+        )
+        .map((mapping) => [
+          `${mapping.themeId}:${mapping.contextBackgroundRef}:${mapping.priorityId}`,
+          mapping,
+        ]),
+    ).values(),
+  ];
+  const recipeOrder = new Map(
+    [...source.colors.interactions.recipes]
+      .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id, "en"))
+      .map((recipe, index) => [recipe.id, index]),
+  );
+  for (const theme of source.themes)
+    for (const priority of source.colors.interactions.priorities) {
+      const counts = new Map<string, number>();
+      for (const mapping of source.colors.interactions.mappings)
+        if (mapping.themeId === theme.id && mapping.priorityId === priority.id)
+          counts.set(mapping.recipeId, (counts.get(mapping.recipeId) ?? 0) + 1);
+      const fallbackRecipeId = [...source.colors.interactions.recipes].sort((left, right) => {
+        const count = (counts.get(right.id) ?? 0) - (counts.get(left.id) ?? 0);
+        return count || (recipeOrder.get(left.id) ?? 0) - (recipeOrder.get(right.id) ?? 0);
+      })[0]!.id;
+      for (const contextBackgroundRef of contexts) {
+        const exists = source.colors.interactions.mappings.some(
+          (mapping) =>
+            mapping.themeId === theme.id &&
+            mapping.contextBackgroundRef === contextBackgroundRef &&
+            mapping.priorityId === priority.id,
+        );
+        if (!exists)
+          source.colors.interactions.mappings.push({
+            themeId: theme.id,
+            contextBackgroundRef,
+            priorityId: priority.id,
+            recipeId: fallbackRecipeId,
+            provenance: "generated",
+          });
+      }
+    }
 }
 
 function toneHasExternalReferences(source: StyleflowProjectSource, toneId: string): boolean {
@@ -308,6 +361,9 @@ function toneHasExternalReferences(source: StyleflowProjectSource, toneId: strin
     (item) => !item.backgroundRef.startsWith(`color.${toneId}.`),
   );
   clone.colors.surfaces = clone.colors.surfaces.filter((item) => item.toneId !== toneId);
+  clone.colors.interactions.mappings = clone.colors.interactions.mappings.filter(
+    (item) => !item.contextBackgroundRef.startsWith(`color.${toneId}.`),
+  );
   return JSON.stringify(clone).includes(`color.${toneId}.`);
 }
 
@@ -486,16 +542,15 @@ export function affectedPaths(operation: DraftOperation): string[] {
       return [`/colors/interactions/priorities/${operation.priority.id}`];
     case "delete-interaction-priority":
       return [`/colors/interactions/priorities/${operation.priorityId}`];
-    case "set-interaction-default":
-      return [`/colors/interactions/defaults/${operation.priorityId}/states/${operation.state}`];
-    case "set-interaction-override":
-      return [
-        `/colors/interactions/overrides/${operation.override.themeId}:${operation.override.contextBackgroundRef}:${operation.override.priorityId}:${operation.override.state}`,
-      ];
-    case "delete-interaction-override":
-      return [
-        `/colors/interactions/overrides/${operation.themeId}:${operation.contextBackgroundRef}:${operation.priorityId}:${operation.state}`,
-      ];
+    case "upsert-interaction-recipe":
+      return [`/colors/interactions/recipes/${operation.recipe.id}`];
+    case "delete-interaction-recipe":
+      return [`/colors/interactions/recipes/${operation.recipeId}`];
+    case "set-interaction-mappings":
+      return operation.mappings.map(
+        (mapping) =>
+          `/colors/interactions/mappings/${mapping.themeId}:${mapping.contextBackgroundRef}:${mapping.priorityId}`,
+      );
     case "upsert-layout-scale-entry":
       return [`/layout/scales/${operation.scale}/${operation.entry.id}`];
     case "delete-layout-scale-entry":
@@ -726,14 +781,26 @@ export function applyDraftOperations(
       }
       case "upsert-theme": {
         const exists = next.themes.some((theme) => theme.id === operation.theme.id);
+        const mappingSourceThemeId = operation.theme.parentId ?? next.themes[0]?.id;
         upsert(next.themes, (theme) => theme.id === operation.theme.id, operation.theme);
-        if (!exists)
+        if (!exists) {
           for (const profile of next.colors.intensityProfiles) {
             const sourceMapping = operation.theme.parentId
               ? profile.mappingByTheme[operation.theme.parentId]
               : Object.values(profile.mappingByTheme)[0];
             profile.mappingByTheme[operation.theme.id] = structuredClone(sourceMapping ?? {});
           }
+          if (mappingSourceThemeId)
+            next.colors.interactions.mappings.push(
+              ...next.colors.interactions.mappings
+                .filter((mapping) => mapping.themeId === mappingSourceThemeId)
+                .map((mapping) => ({
+                  ...structuredClone(mapping),
+                  themeId: operation.theme.id,
+                  provenance: "generated" as const,
+                })),
+            );
+        }
         break;
       }
       case "delete-theme":
@@ -746,7 +813,7 @@ export function applyDraftOperations(
           }
         for (const profile of next.colors.intensityProfiles)
           delete profile.mappingByTheme[operation.themeId];
-        next.colors.interactions.overrides = next.colors.interactions.overrides.filter(
+        next.colors.interactions.mappings = next.colors.interactions.mappings.filter(
           (item) => item.themeId !== operation.themeId,
         );
         break;
@@ -841,70 +908,61 @@ export function applyDraftOperations(
           (item) => item.id === operation.priority.id,
           operation.priority,
         );
-        if (operation.defaultRecipe)
-          upsert(
-            next.colors.interactions.defaults,
-            (item) => item.priorityId === operation.priority.id,
-            operation.defaultRecipe,
-          );
         break;
       case "delete-interaction-priority": {
         if (next.colors.interactions.priorities.length === 1)
           throw new Error("A project must keep at least one interaction priority");
-        const referenced = next.colors.interactions.overrides.some(
-          (item) => item.priorityId === operation.priorityId,
-        );
-        if (referenced && !operation.replacementPriorityId)
-          throw new Error(`Priority "${operation.priorityId}" is referenced; use Replace & delete`);
-        if (operation.replacementPriorityId)
-          for (const item of next.colors.interactions.overrides)
-            if (item.priorityId === operation.priorityId)
-              item.priorityId = operation.replacementPriorityId;
-        next.colors.interactions.overrides = [
-          ...new Map(
-            next.colors.interactions.overrides.map((item) => [
-              `${item.themeId}:${item.contextBackgroundRef}:${item.priorityId}:${item.state}`,
-              item,
-            ]),
-          ).values(),
-        ];
         next.colors.interactions.priorities = next.colors.interactions.priorities.filter(
           (item) => item.id !== operation.priorityId,
         );
-        next.colors.interactions.defaults = next.colors.interactions.defaults.filter(
+        next.colors.interactions.mappings = next.colors.interactions.mappings.filter(
           (item) => item.priorityId !== operation.priorityId,
         );
         break;
       }
-      case "set-interaction-default": {
-        const recipe = next.colors.interactions.defaults.find(
-          (item) => item.priorityId === operation.priorityId,
+      case "upsert-interaction-recipe":
+        upsert(
+          next.colors.interactions.recipes,
+          (item) => item.id === operation.recipe.id,
+          operation.recipe,
         );
-        if (!recipe) throw new Error(`Unknown interaction priority "${operation.priorityId}"`);
-        recipe.states[operation.state] = structuredClone(operation.recipe);
+        break;
+      case "delete-interaction-recipe": {
+        if (next.colors.interactions.recipes.length === 1)
+          throw new Error("A project must keep at least one interaction recipe");
+        const referenced = next.colors.interactions.mappings.some(
+          (item) => item.recipeId === operation.recipeId,
+        );
+        if (referenced && !operation.replacementRecipeId)
+          throw new Error(`Recipe "${operation.recipeId}" is referenced; use Replace & delete`);
+        if (
+          operation.replacementRecipeId &&
+          !next.colors.interactions.recipes.some(
+            (item) => item.id === operation.replacementRecipeId,
+          )
+        )
+          throw new Error(`Unknown replacement recipe "${operation.replacementRecipeId}"`);
+        if (operation.replacementRecipeId)
+          for (const mapping of next.colors.interactions.mappings)
+            if (mapping.recipeId === operation.recipeId) {
+              mapping.recipeId = operation.replacementRecipeId;
+              mapping.provenance = "manual";
+            }
+        next.colors.interactions.recipes = next.colors.interactions.recipes.filter(
+          (item) => item.id !== operation.recipeId,
+        );
         break;
       }
-      case "set-interaction-override":
-        upsert(
-          next.colors.interactions.overrides,
-          (item) =>
-            item.themeId === operation.override.themeId &&
-            item.contextBackgroundRef === operation.override.contextBackgroundRef &&
-            item.priorityId === operation.override.priorityId &&
-            item.state === operation.override.state,
-          operation.override,
-        );
-        break;
-      case "delete-interaction-override":
-        next.colors.interactions.overrides = next.colors.interactions.overrides.filter(
-          (item) =>
-            !(
-              item.themeId === operation.themeId &&
-              item.contextBackgroundRef === operation.contextBackgroundRef &&
-              item.priorityId === operation.priorityId &&
-              item.state === operation.state
-            ),
-        );
+      case "set-interaction-mappings":
+        for (const mapping of operation.mappings)
+          upsert(
+            next.colors.interactions.mappings,
+            (item) =>
+              item.themeId === mapping.themeId &&
+              item.contextBackgroundRef === mapping.contextBackgroundRef &&
+              item.priorityId === mapping.priorityId,
+            mapping,
+          );
         break;
       case "upsert-layout-scale-entry":
         upsert(
@@ -1186,5 +1244,6 @@ export function applyDraftOperations(
         break;
     }
   }
+  reconcileInteractionMappings(next);
   return next;
 }

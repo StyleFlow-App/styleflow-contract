@@ -1,4 +1,11 @@
-import { contrastRatio, OKLCH_JND, parseHexColor, renderOklchSource } from "./color";
+import {
+  composite,
+  contrastRatio,
+  OKLCH_JND,
+  parseHexColor,
+  renderOklchSource,
+  rgbaToHex,
+} from "./color";
 import { validateProjectSemantics } from "./semantic-validator";
 import { resolveThemeGraph } from "./theme-resolver";
 import type {
@@ -7,7 +14,6 @@ import type {
   Diagnostic,
   ForegroundRole,
   InteractionState,
-  InteractionStateRecipe,
   LayoutProperty,
   ResolvedInteraction,
   ResolvedInteractionState,
@@ -124,28 +130,30 @@ function resolveSurfaces(
   }));
 }
 
-function mergedInteractionRecipe(
-  source: StyleflowProjectSource,
-  themeId: string,
-  contextBackgroundRef: TokenReference,
-  priorityId: string,
-  state: InteractionState,
-): { recipe: InteractionStateRecipe; provenance: ResolvedInteractionState["provenance"] } | null {
-  const fallback = source.colors.interactions.defaults.find(
-    (item) => item.priorityId === priorityId,
-  )?.states[state];
-  if (!fallback) return null;
-  const override = source.colors.interactions.overrides.find(
-    (item) =>
-      item.themeId === themeId &&
-      item.contextBackgroundRef === contextBackgroundRef &&
-      item.priorityId === priorityId &&
-      item.state === state,
-  );
-  return {
-    recipe: { ...structuredClone(fallback), ...structuredClone(override?.values ?? {}) },
-    provenance: override?.provenance ?? "generated",
-  };
+function withOpacity(value: string, opacity: number): string {
+  const parsed = parseHexColor(value);
+  if (!parsed) return "#00000000";
+  return rgbaToHex({ ...parsed, a: parsed.a * opacity });
+}
+
+function renderPixel(
+  top: string | undefined,
+  fill: string | undefined,
+  fillOpacity: number,
+  controlOpacity: number,
+  context: string,
+  canvas: string,
+): string {
+  const transparent = { r: 0, g: 0, b: 0, a: 0 };
+  const fillLayer = fill
+    ? (parseHexColor(withOpacity(fill, fillOpacity)) ?? transparent)
+    : transparent;
+  const topLayer = top ? (parseHexColor(top) ?? transparent) : transparent;
+  const localPixel = top ? composite(topLayer, fillLayer) : fillLayer;
+  const groupedPixel = { ...localPixel, a: localPixel.a * controlOpacity };
+  const canvasPixel = parseHexColor(canvas) ?? { r: 1, g: 1, b: 1, a: 1 };
+  const contextPixel = composite(parseHexColor(context) ?? transparent, canvasPixel);
+  return rgbaToHex(composite(groupedPixel, contextPixel));
 }
 
 function resolveInteractions(
@@ -158,7 +166,9 @@ function resolveInteractions(
 ): ResolvedInteraction[] {
   const blocking = source.settings.accessibility.policy === "block";
   const textThreshold = source.settings.accessibility.level === "AAA" ? 7 : 4.5;
-  const contexts = [...new Set(source.colors.onColors.map((item) => item.backgroundRef))];
+  const contexts = [
+    ...new Set(source.colors.surfaces.flatMap((surface) => Object.values(surface.backgrounds))),
+  ];
   const resolved: ResolvedInteraction[] = [];
   for (const contextBackgroundRef of contexts) {
     const contextBackground = resolveToken(contextBackgroundRef) ?? undefined;
@@ -167,49 +177,96 @@ function resolveInteractions(
     )) {
       const states = {} as Record<InteractionState, ResolvedInteractionState>;
       for (const state of INTERACTION_STATES) {
-        const merged = mergedInteractionRecipe(
-          source,
-          themeId,
-          contextBackgroundRef,
-          priority.id,
-          state,
+        const mapping = source.colors.interactions.mappings.find(
+          (item) =>
+            item.themeId === themeId &&
+            item.contextBackgroundRef === contextBackgroundRef &&
+            item.priorityId === priority.id,
         );
-        if (!merged) continue;
-        const { recipe, provenance } = merged;
+        const definition = source.colors.interactions.recipes.find(
+          (item) => item.id === mapping?.recipeId,
+        );
+        const recipe = definition?.states[state];
+        if (!mapping || !definition || !recipe) continue;
+        const provenance = mapping.provenance;
         const path = `/colors/interactions/resolved/${themeId}/${contextBackgroundRef}/${priority.id}/${state}`;
-        const background = resolveToken(recipe.backgroundRef) ?? undefined;
-        if (!background)
+        const backgroundRef =
+          recipe.background.kind === "token" ? recipe.background.reference : null;
+        const background = backgroundRef ? (resolveToken(backgroundRef) ?? undefined) : undefined;
+        if (backgroundRef && !background)
           diagnostics.push(
-            missingReference(recipe.backgroundRef, `${path}/backgroundRef`, themeId),
+            missingReference(backgroundRef, `${path}/background/reference`, themeId),
           );
-        const onColor = onColorByBackground.get(recipe.backgroundRef);
+        const roleSourceBackgroundRef = backgroundRef ?? contextBackgroundRef;
+        const onColor = onColorByBackground.get(roleSourceBackgroundRef);
         const foregroundRef =
           recipe.foregroundOverrideRef ?? onColor?.foreground[recipe.foregroundRole].reference;
-        const borderRef = recipe.borderOverrideRef ?? onColor?.border[recipe.borderRole].reference;
+        const borderRef =
+          recipe.border.kind === "role"
+            ? (recipe.border.overrideRef ?? onColor?.border[recipe.border.role].reference)
+            : undefined;
         const foreground = foregroundRef ? (resolveToken(foregroundRef) ?? undefined) : undefined;
         const border = borderRef ? (resolveToken(borderRef) ?? undefined) : undefined;
         if (!foregroundRef || !foreground)
           diagnostics.push(
             missingReference(
-              foregroundRef ?? `${recipe.backgroundRef}.on-color`,
+              foregroundRef ?? `${roleSourceBackgroundRef}.on-color`,
               `${path}/foreground`,
               themeId,
             ),
           );
-        if (!borderRef || !border)
+        if (recipe.border.kind === "role" && (!borderRef || !border))
           diagnostics.push(
             missingReference(
-              borderRef ?? `${recipe.backgroundRef}.border`,
+              borderRef ?? `${roleSourceBackgroundRef}.border`,
               `${path}/border`,
               themeId,
             ),
           );
-        const foregroundRatio = ratioOrZero(foreground, background, canvas);
-        const borderRatio = ratioOrZero(border, background, canvas);
-        const backgroundContextRatio = ratioOrZero(background, contextBackground, canvas);
-        const borderContextRatio = ratioOrZero(border, contextBackground, canvas);
+        const canvasValue = canvas ?? "#ffffff";
+        const fillOpacity = recipe.background.kind === "token" ? recipe.background.opacity : 0;
+        const effectiveBackground = renderPixel(
+          undefined,
+          background,
+          fillOpacity,
+          recipe.controlOpacity,
+          contextBackground ?? "#00000000",
+          canvasValue,
+        );
+        const effectiveForeground = renderPixel(
+          foreground,
+          background,
+          fillOpacity,
+          recipe.controlOpacity,
+          contextBackground ?? "#00000000",
+          canvasValue,
+        );
+        const effectiveBorder = border
+          ? renderPixel(
+              border,
+              background,
+              fillOpacity,
+              recipe.controlOpacity,
+              contextBackground ?? "#00000000",
+              canvasValue,
+            )
+          : undefined;
+        const renderedContext = renderPixel(
+          undefined,
+          undefined,
+          0,
+          1,
+          contextBackground ?? "#00000000",
+          canvasValue,
+        );
+        const foregroundRatio = ratioOrZero(effectiveForeground, effectiveBackground, canvasValue);
+        const borderRatio = ratioOrZero(effectiveBorder, effectiveBackground, canvasValue);
+        const backgroundContextRatio = background
+          ? ratioOrZero(effectiveBackground, renderedContext, canvasValue)
+          : 1;
+        const borderContextRatio = ratioOrZero(effectiveBorder, renderedContext, canvasValue);
         const isDisabled = state === "disabled";
-        if (foreground && background && foregroundRatio < textThreshold)
+        if (foreground && foregroundRatio < textThreshold)
           diagnostics.push(
             contrastDiagnostic(
               `${path}/foreground`,
@@ -223,6 +280,7 @@ function resolveInteractions(
           );
         if (
           !isDisabled &&
+          (background || border) &&
           ["default", "hover", "active", "focus-visible"].includes(state) &&
           Math.max(backgroundContextRatio, borderContextRatio) < 3
         )
@@ -243,8 +301,18 @@ function resolveInteractions(
             diagnostics.push(
               missingReference(recipe.focusRing.colorRef, `${path}/focusRing/colorRef`, themeId),
             );
-          const controlRatio = ratioOrZero(value, background, canvas);
-          const contextRatio = ratioOrZero(value, contextBackground, canvas);
+          const effectiveFocus = value
+            ? renderPixel(
+                value,
+                undefined,
+                0,
+                recipe.controlOpacity,
+                contextBackground ?? "#00000000",
+                canvasValue,
+              )
+            : undefined;
+          const controlRatio = ratioOrZero(effectiveFocus, effectiveBackground, canvasValue);
+          const contextRatio = ratioOrZero(effectiveFocus, renderedContext, canvasValue);
           if (value && Math.min(controlRatio, contextRatio) < 3)
             diagnostics.push(
               contrastDiagnostic(
@@ -266,27 +334,39 @@ function resolveInteractions(
           };
         }
         states[state] = {
-          background: { reference: recipe.backgroundRef, value: background ?? "#00000000" },
+          background: backgroundRef
+            ? {
+                reference: backgroundRef,
+                value: background ?? "#00000000",
+                opacity: fillOpacity,
+                compositedValue: effectiveBackground,
+              }
+            : null,
           contextBackground: {
             reference: contextBackgroundRef,
             value: contextBackground ?? "#00000000",
           },
+          roleSourceBackgroundRef,
           foreground: {
-            reference: foregroundRef ?? recipe.backgroundRef,
+            reference: foregroundRef ?? roleSourceBackgroundRef,
             value: foreground ?? "#00000000",
             role: recipe.foregroundRole,
             ratio: foregroundRatio,
           },
-          border: {
-            reference: borderRef ?? recipe.backgroundRef,
-            value: border ?? "#00000000",
-            role: recipe.borderRole,
-            ratio: borderRatio,
-            contextRatio: borderContextRatio,
-          },
+          border:
+            recipe.border.kind === "role"
+              ? {
+                  reference: borderRef ?? roleSourceBackgroundRef,
+                  value: border ?? "#00000000",
+                  role: recipe.border.role,
+                  ratio: borderRatio,
+                  contextRatio: borderContextRatio,
+                }
+              : null,
           backgroundContextRatio,
           ...(focusRing ? { focusRing } : {}),
-          ...(recipe.opacity === undefined ? {} : { opacity: recipe.opacity }),
+          controlOpacity: recipe.controlOpacity,
+          recipeId: definition.id,
           provenance,
         };
       }
@@ -310,8 +390,14 @@ function resolveInteractions(
         const higher = rows[index];
         const lower = rows[index + 1];
         if (!higher || !lower) continue;
-        const higherScore = Math.max(higher.backgroundContextRatio, higher.border.contextRatio);
-        const lowerScore = Math.max(lower.backgroundContextRatio, lower.border.contextRatio);
+        const higherScore = Math.max(
+          higher.background ? higher.backgroundContextRatio : 0,
+          higher.border?.contextRatio ?? 0,
+        );
+        const lowerScore = Math.max(
+          lower.background ? lower.backgroundContextRatio : 0,
+          lower.border?.contextRatio ?? 0,
+        );
         if (higherScore + 0.01 < lowerScore)
           diagnostics.push({
             code: "SF_INTERACTION_SALIENCE_ORDER",
@@ -636,6 +722,20 @@ export function compileProject(source: StyleflowProjectSource): CompiledProject 
       customThemes: source.themes.some((theme) => theme.polarity === "custom"),
       asymmetricIntensity: softStrongCounts.some((item) => item.soft !== item.strong),
       contextualInteractions: true,
+      interactionRecipes: true,
+      transparentInteractionBackgrounds: source.colors.interactions.recipes.some((recipe) =>
+        INTERACTION_STATES.some((state) => recipe.states[state].background.kind === "none"),
+      ),
+      interactionBackgroundOpacity: source.colors.interactions.recipes.some((recipe) =>
+        INTERACTION_STATES.some(
+          (state) =>
+            recipe.states[state].background.kind === "token" &&
+            recipe.states[state].background.opacity < 1,
+        ),
+      ),
+      borderlessInteractions: source.colors.interactions.recipes.some((recipe) =>
+        INTERACTION_STATES.some((state) => recipe.states[state].border.kind === "none"),
+      ),
       fluidTypography: true,
       breakpointCount,
       typographyTokenCount: typography.length,

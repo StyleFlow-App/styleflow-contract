@@ -18,7 +18,12 @@
         "description": { "type": "string" }
       }
     },
-    "themes": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "themes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
     "axes": {
       "type": "object",
       "additionalProperties": false,
@@ -30,7 +35,11 @@
           "required": ["tones", "intensitiesByTone", "surfaces", "foregrounds"],
           "properties": {
             "tones": { "$ref": "#/$defs/uniqueIds" },
-            "intensitiesByTone": { "type": "object", "minProperties": 1, "additionalProperties": { "$ref": "#/$defs/uniqueIds" } },
+            "intensitiesByTone": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": { "$ref": "#/$defs/uniqueIds" }
+            },
             "surfaces": { "$ref": "#/$defs/uniqueIds" },
             "foregrounds": { "$ref": "#/$defs/uniqueIds" }
           }
@@ -49,7 +58,10 @@
                 "type": "object",
                 "additionalProperties": false,
                 "required": ["id", "minWidth"],
-                "properties": { "id": { "type": "string", "minLength": 1 }, "minWidth": { "type": "number", "minimum": 0 } }
+                "properties": {
+                  "id": { "type": "string", "minLength": 1 },
+                  "minWidth": { "type": "number", "minimum": 0 }
+                }
               }
             }
           }
@@ -60,7 +72,11 @@
           "required": ["types", "variantsByType", "weights"],
           "properties": {
             "types": { "$ref": "#/$defs/uniqueIds" },
-            "variantsByType": { "type": "object", "minProperties": 1, "additionalProperties": { "$ref": "#/$defs/uniqueIds" } },
+            "variantsByType": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": { "$ref": "#/$defs/uniqueIds" }
+            },
             "weights": { "$ref": "#/$defs/uniqueIds" }
           }
         },
@@ -68,20 +84,40 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["priorities", "states"],
-          "properties": { "priorities": { "$ref": "#/$defs/uniqueIds" }, "states": { "$ref": "#/$defs/uniqueIds" } }
+          "properties": {
+            "priorities": { "$ref": "#/$defs/uniqueIds" },
+            "states": { "$ref": "#/$defs/uniqueIds" }
+          }
         }
       }
     },
     "capabilities": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["themeCount", "maxIntensityCount", "customThemes", "asymmetricIntensity", "contextualInteractions", "fluidTypography", "breakpointCount", "typographyTokenCount"],
+      "required": [
+        "themeCount",
+        "maxIntensityCount",
+        "customThemes",
+        "asymmetricIntensity",
+        "contextualInteractions",
+        "interactionRecipes",
+        "transparentInteractionBackgrounds",
+        "interactionBackgroundOpacity",
+        "borderlessInteractions",
+        "fluidTypography",
+        "breakpointCount",
+        "typographyTokenCount"
+      ],
       "properties": {
         "themeCount": { "type": "integer", "minimum": 1 },
         "maxIntensityCount": { "type": "integer", "minimum": 1, "maximum": 21 },
         "customThemes": { "type": "boolean" },
         "asymmetricIntensity": { "type": "boolean" },
         "contextualInteractions": { "type": "boolean" },
+        "interactionRecipes": { "type": "boolean" },
+        "transparentInteractionBackgrounds": { "type": "boolean" },
+        "interactionBackgroundOpacity": { "type": "boolean" },
+        "borderlessInteractions": { "type": "boolean" },
         "fluidTypography": { "type": "boolean" },
         "breakpointCount": { "type": "integer", "minimum": 1 },
         "typographyTokenCount": { "type": "integer", "minimum": 1 }
@@ -104,7 +140,12 @@
     }
   },
   "$defs": {
-    "uniqueIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+    "uniqueIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    }
   },
   "dependentRequired": { "activeTheme": ["resolved"], "resolved": ["activeTheme"] }
 }

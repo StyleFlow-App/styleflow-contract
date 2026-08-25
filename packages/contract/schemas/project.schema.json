@@ -314,18 +314,59 @@
         "offset": { "$ref": "#/$defs/cssLength" }
       }
     },
+    "interactionBackground": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "none" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "reference", "opacity"],
+          "properties": {
+            "kind": { "const": "token" },
+            "reference": { "$ref": "#/$defs/tokenReference" },
+            "opacity": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+          }
+        }
+      ]
+    },
+    "interactionBorder": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "none" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "role"],
+          "properties": {
+            "kind": { "const": "role" },
+            "role": { "enum": ["default", "soft", "strong"] },
+            "overrideRef": { "$ref": "#/$defs/tokenReference" }
+          }
+        }
+      ]
+    },
     "interactionState": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["backgroundRef", "foregroundRole", "borderRole"],
+      "required": ["background", "foregroundRole", "border", "focusRing", "controlOpacity"],
       "properties": {
-        "backgroundRef": { "$ref": "#/$defs/tokenReference" },
+        "background": { "$ref": "#/$defs/interactionBackground" },
         "foregroundRole": { "enum": ["primary", "secondary", "tertiary", "muted", "accent"] },
-        "borderRole": { "enum": ["default", "soft", "strong"] },
         "foregroundOverrideRef": { "$ref": "#/$defs/tokenReference" },
-        "borderOverrideRef": { "$ref": "#/$defs/tokenReference" },
-        "focusRing": { "$ref": "#/$defs/focusRing" },
-        "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+        "border": { "$ref": "#/$defs/interactionBorder" },
+        "focusRing": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/focusRing" }]
+        },
+        "controlOpacity": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
       }
     },
     "interactionStates": {
@@ -340,45 +381,27 @@
         "disabled": { "$ref": "#/$defs/interactionState" }
       }
     },
-    "interactionDefault": {
+    "interactionRecipe": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["priorityId", "states"],
+      "required": ["id", "label", "order", "status", "states"],
       "properties": {
-        "priorityId": { "$ref": "#/$defs/publicId" },
+        "id": { "$ref": "#/$defs/publicId" },
+        "label": { "$ref": "#/$defs/label" },
+        "order": { "type": "integer", "minimum": 0 },
+        "status": { "$ref": "#/$defs/status" },
         "states": { "$ref": "#/$defs/interactionStates" }
       }
     },
-    "interactionOverride": {
+    "interactionMapping": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "themeId",
-        "contextBackgroundRef",
-        "priorityId",
-        "state",
-        "values",
-        "provenance"
-      ],
+      "required": ["themeId", "contextBackgroundRef", "priorityId", "recipeId", "provenance"],
       "properties": {
         "themeId": { "$ref": "#/$defs/publicId" },
         "contextBackgroundRef": { "$ref": "#/$defs/tokenReference" },
         "priorityId": { "$ref": "#/$defs/publicId" },
-        "state": { "enum": ["default", "hover", "active", "focus-visible", "disabled"] },
-        "values": {
-          "type": "object",
-          "minProperties": 1,
-          "additionalProperties": false,
-          "properties": {
-            "backgroundRef": { "$ref": "#/$defs/tokenReference" },
-            "foregroundRole": { "enum": ["primary", "secondary", "tertiary", "muted", "accent"] },
-            "borderRole": { "enum": ["default", "soft", "strong"] },
-            "foregroundOverrideRef": { "$ref": "#/$defs/tokenReference" },
-            "borderOverrideRef": { "$ref": "#/$defs/tokenReference" },
-            "focusRing": { "$ref": "#/$defs/focusRing" },
-            "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
-          }
-        },
+        "recipeId": { "$ref": "#/$defs/publicId" },
         "provenance": { "enum": ["generated", "bulk", "manual"] }
       }
     },
@@ -398,19 +421,19 @@
         "interactions": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["priorities", "defaults", "overrides"],
+          "required": ["priorities", "recipes", "mappings"],
           "properties": {
             "priorities": {
               "type": "array",
               "minItems": 1,
               "items": { "$ref": "#/$defs/orderedEntity" }
             },
-            "defaults": {
+            "recipes": {
               "type": "array",
               "minItems": 1,
-              "items": { "$ref": "#/$defs/interactionDefault" }
+              "items": { "$ref": "#/$defs/interactionRecipe" }
             },
-            "overrides": { "type": "array", "items": { "$ref": "#/$defs/interactionOverride" } }
+            "mappings": { "type": "array", "items": { "$ref": "#/$defs/interactionMapping" } }
           }
         }
       }
@@ -724,7 +747,18 @@
           "required": ["layoutRole", "density", "typography"],
           "properties": {
             "layoutRole": {
-              "enum": ["none", "control", "chip", "item", "stack", "tile", "panel", "section", "region", "container"]
+              "enum": [
+                "none",
+                "control",
+                "chip",
+                "item",
+                "stack",
+                "tile",
+                "panel",
+                "section",
+                "region",
+                "container"
+              ]
             },
             "density": { "enum": ["compact", "regular", "comfortable"] },
             "typography": {
