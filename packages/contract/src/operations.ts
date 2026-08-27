@@ -1,6 +1,6 @@
 import { compileProject, listCandidateTokenReferences } from "./compiler";
 import { contrastRatio, generateColorRamp, renderOklchSource } from "./color";
-import { createPresetSource, DEFAULT_INTENSITY_LEVELS } from "./preset";
+import { DEFAULT_INTENSITY_LEVELS } from "./preset";
 import type {
   ColorRamp,
   DraftOperation,
@@ -37,45 +37,71 @@ function setRole(
   contract: OnColorContract,
   target: OnColorRolePath,
   tokenRef: TokenReference,
+  themeId: string,
+  provenance: OnColorContract["provenance"],
 ): void {
-  if (target.group === "foreground") contract.foreground[target.role] = tokenRef;
-  else contract.border[target.role] = tokenRef;
+  contract.themeOverrides ??= {};
+  const override = (contract.themeOverrides[themeId] ??= { provenance });
+  override.provenance = provenance;
+  if (target.group === "foreground") {
+    override.foreground ??= {};
+    override.foreground[target.role] = tokenRef;
+  } else {
+    override.border ??= {};
+    override.border[target.role] = tokenRef;
+  }
+}
+
+function onColorRolesForTheme(
+  contract: OnColorContract,
+  themeId: string,
+): {
+  foreground: OnColorContract["foreground"];
+  border: OnColorContract["border"];
+} {
+  const override = contract.themeOverrides?.[themeId];
+  return {
+    foreground: { ...contract.foreground, ...override?.foreground },
+    border: { ...contract.border, ...override?.border },
+  };
+}
+
+function assertThemeExists(source: StyleflowProjectSource, themeId: string): void {
+  if (!source.themes.some((theme) => theme.id === themeId))
+    throw new Error(`Unknown theme "${themeId}"`);
 }
 
 function chooseBestCandidate(
   source: StyleflowProjectSource,
+  themeId: string,
   backgroundRef: TokenReference,
   target: OnColorRolePath,
 ): TokenReference | null {
   const compiled = compileProject(source);
+  const theme = compiled.themes.find((item) => item.id === themeId);
+  if (!theme) throw new Error(`Unknown theme "${themeId}"`);
   const candidates = listCandidateTokenReferences(source);
-  let best: { reference: TokenReference; minimumRatio: number } | null = null;
+  let best: { reference: TokenReference; ratio: number } | null = null;
   for (const reference of candidates) {
-    let minimumRatio = Number.POSITIVE_INFINITY;
-    for (const theme of compiled.themes) {
-      const background = theme.tokens[backgroundRef];
-      const foreground = theme.tokens[reference];
-      const canvasRef = source.themes.find((item) => item.id === theme.id)?.canvasToken;
-      const canvas = canvasRef ? theme.tokens[canvasRef] : undefined;
-      if (
-        !background ||
-        !foreground ||
-        (!canvas && (background.length === 9 || foreground.length === 9))
-      ) {
-        minimumRatio = 0;
-        break;
-      }
-      minimumRatio = Math.min(minimumRatio, contrastRatio(foreground, background, canvas) ?? 0);
-    }
+    const background = theme.tokens[backgroundRef];
+    const foreground = theme.tokens[reference];
+    const canvasRef = source.themes.find((item) => item.id === theme.id)?.canvasToken;
+    const canvas = canvasRef ? theme.tokens[canvasRef] : undefined;
+    const ratio =
+      !background ||
+      !foreground ||
+      (!canvas && (background.length === 9 || foreground.length === 9))
+        ? 0
+        : (contrastRatio(foreground, background, canvas) ?? 0);
     const targetRatio = target.group === "foreground" ? 4.5 : 3;
-    const candidatePasses = minimumRatio >= targetRatio;
-    const bestPasses = (best?.minimumRatio ?? 0) >= targetRatio;
+    const candidatePasses = ratio >= targetRatio;
+    const bestPasses = (best?.ratio ?? 0) >= targetRatio;
     if (
       !best ||
       (candidatePasses && !bestPasses) ||
-      (candidatePasses === bestPasses && minimumRatio > best.minimumRatio)
+      (candidatePasses === bestPasses && ratio > best.ratio)
     ) {
-      best = { reference, minimumRatio };
+      best = { reference, ratio };
     }
   }
   return best?.reference ?? null;
@@ -280,6 +306,14 @@ function remapToneReferences(source: StyleflowProjectSource, from: string, to: s
       contract.foreground[role] = replaceToneRef(contract.foreground[role], from, to);
     for (const role of BORDER_ROLES)
       contract.border[role] = replaceToneRef(contract.border[role], from, to);
+    for (const override of Object.values(contract.themeOverrides ?? {})) {
+      for (const role of FOREGROUND_ROLES)
+        if (override.foreground?.[role])
+          override.foreground[role] = replaceToneRef(override.foreground[role]!, from, to);
+      for (const role of BORDER_ROLES)
+        if (override.border?.[role])
+          override.border[role] = replaceToneRef(override.border[role]!, from, to);
+    }
     if (contract.compositeOn) contract.compositeOn = replaceToneRef(contract.compositeOn, from, to);
   }
   for (const surface of source.colors.surfaces)
@@ -367,31 +401,17 @@ function toneHasExternalReferences(source: StyleflowProjectSource, toneId: strin
   return JSON.stringify(clone).includes(`color.${toneId}.`);
 }
 
-function resetOnColors(source: StyleflowProjectSource, backgroundRefs: TokenReference[]): void {
-  const preset = createPresetSource();
+function resetOnColors(
+  source: StyleflowProjectSource,
+  themeId: string,
+  backgroundRefs: TokenReference[],
+): void {
+  assertThemeExists(source, themeId);
   for (const contract of source.colors.onColors) {
     if (!backgroundRefs.includes(contract.backgroundRef)) continue;
-    const presetContract = preset.colors.onColors.find(
-      (item) => item.backgroundRef === contract.backgroundRef,
-    );
-    if (presetContract) Object.assign(contract, structuredClone(presetContract));
-    else {
-      for (const role of FOREGROUND_ROLES) {
-        const candidate = chooseBestCandidate(source, contract.backgroundRef, {
-          group: "foreground",
-          role,
-        });
-        if (candidate) contract.foreground[role] = candidate;
-      }
-      for (const role of BORDER_ROLES) {
-        const candidate = chooseBestCandidate(source, contract.backgroundRef, {
-          group: "border",
-          role,
-        });
-        if (candidate) contract.border[role] = candidate;
-      }
-      contract.provenance = "generated";
-    }
+    if (contract.themeOverrides) delete contract.themeOverrides[themeId];
+    if (contract.themeOverrides && Object.keys(contract.themeOverrides).length === 0)
+      delete contract.themeOverrides;
   }
 }
 
@@ -529,11 +549,13 @@ export function affectedPaths(operation: DraftOperation): string[] {
     case "interpolate-on-color":
       return operation.backgroundRefs.map(
         (reference) =>
-          `/colors/onColors/${reference}/${operation.target.group}/${operation.target.role}`,
+          `/colors/onColors/${reference}/themeOverrides/${operation.themeId}/${operation.target.group}/${operation.target.role}`,
       );
     case "copy-on-color-roles":
     case "reset-on-color":
-      return operation.backgroundRefs.map((reference) => `/colors/onColors/${reference}`);
+      return operation.backgroundRefs.map(
+        (reference) => `/colors/onColors/${reference}/themeOverrides/${operation.themeId}`,
+      );
     case "set-theme-override":
       return [`/themes/${operation.themeId}/tokenOverrides/${operation.tokenRef}`];
     case "set-surface-recipe":
@@ -813,28 +835,45 @@ export function applyDraftOperations(
           }
         for (const profile of next.colors.intensityProfiles)
           delete profile.mappingByTheme[operation.themeId];
+        for (const contract of next.colors.onColors) {
+          if (contract.themeOverrides) delete contract.themeOverrides[operation.themeId];
+          if (contract.themeOverrides && Object.keys(contract.themeOverrides).length === 0)
+            delete contract.themeOverrides;
+        }
         next.colors.interactions.mappings = next.colors.interactions.mappings.filter(
           (item) => item.themeId !== operation.themeId,
         );
         break;
       case "set-on-color":
+        assertThemeExists(next, operation.themeId);
         for (const contract of next.colors.onColors)
           if (operation.backgroundRefs.includes(contract.backgroundRef)) {
-            setRole(contract, operation.target, operation.tokenRef);
-            contract.provenance = operation.provenance;
+            setRole(
+              contract,
+              operation.target,
+              operation.tokenRef,
+              operation.themeId,
+              operation.provenance,
+            );
           }
         break;
       case "auto-solve-on-color":
+        assertThemeExists(next, operation.themeId);
         for (const contract of next.colors.onColors)
           if (operation.backgroundRefs.includes(contract.backgroundRef)) {
-            const candidate = chooseBestCandidate(next, contract.backgroundRef, operation.target);
+            const candidate = chooseBestCandidate(
+              next,
+              operation.themeId,
+              contract.backgroundRef,
+              operation.target,
+            );
             if (candidate) {
-              setRole(contract, operation.target, candidate);
-              contract.provenance = "bulk";
+              setRole(contract, operation.target, candidate, operation.themeId, "bulk");
             }
           }
         break;
       case "relative-on-color":
+        assertThemeExists(next, operation.themeId);
         for (const contract of next.colors.onColors)
           if (operation.backgroundRefs.includes(contract.backgroundRef)) {
             const candidate = relativeReference(
@@ -844,12 +883,12 @@ export function applyDraftOperations(
               operation.toneId,
             );
             if (candidate) {
-              setRole(contract, operation.target, candidate);
-              contract.provenance = "bulk";
+              setRole(contract, operation.target, candidate, operation.themeId, "bulk");
             }
           }
         break;
       case "interpolate-on-color": {
+        assertThemeExists(next, operation.themeId);
         const references = interpolateReferences(
           next,
           operation.backgroundRefs,
@@ -861,30 +900,44 @@ export function applyDraftOperations(
             (item) => item.backgroundRef === backgroundRef,
           );
           if (contract && references[index]) {
-            setRole(contract, operation.target, references[index]!);
-            contract.provenance = "bulk";
+            setRole(contract, operation.target, references[index]!, operation.themeId, "bulk");
           }
         });
         break;
       }
       case "copy-on-color-roles": {
+        assertThemeExists(next, operation.themeId);
         const sourceContract = next.colors.onColors.find(
           (item) => item.backgroundRef === operation.sourceBackgroundRef,
         );
         if (!sourceContract)
           throw new Error(`Unknown on-color source "${operation.sourceBackgroundRef}"`);
+        const sourceRoles = onColorRolesForTheme(sourceContract, operation.themeId);
         for (const contract of next.colors.onColors)
           if (operation.backgroundRefs.includes(contract.backgroundRef)) {
             if (operation.groups.includes("foreground"))
-              contract.foreground = structuredClone(sourceContract.foreground);
+              for (const role of FOREGROUND_ROLES)
+                setRole(
+                  contract,
+                  { group: "foreground", role },
+                  sourceRoles.foreground[role],
+                  operation.themeId,
+                  "bulk",
+                );
             if (operation.groups.includes("border"))
-              contract.border = structuredClone(sourceContract.border);
-            contract.provenance = "bulk";
+              for (const role of BORDER_ROLES)
+                setRole(
+                  contract,
+                  { group: "border", role },
+                  sourceRoles.border[role],
+                  operation.themeId,
+                  "bulk",
+                );
           }
         break;
       }
       case "reset-on-color":
-        resetOnColors(next, operation.backgroundRefs);
+        resetOnColors(next, operation.themeId, operation.backgroundRefs);
         break;
       case "set-theme-override": {
         const theme = next.themes.find((item) => item.id === operation.themeId);

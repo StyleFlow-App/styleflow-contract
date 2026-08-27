@@ -1,8 +1,8 @@
 export const CONTRACT_PACKAGE_NAME = "@styleflow.app/contract" as const;
-export const CONTRACT_VERSION = "1.0.0-beta.1" as const;
+export const CONTRACT_VERSION = "1.0.0-beta.2" as const;
 export const FORMAT_VERSION = "1.0.0" as const;
 export const BUNDLE_VERSION = "1.0.0" as const;
-export const OPERATION_PROTOCOL_VERSION = "1.0.0-beta.1" as const;
+export const OPERATION_PROTOCOL_VERSION = "1.0.0-beta.2" as const;
 
 export const ANCHOR_POSITIONS = [
   "000",
@@ -166,6 +166,12 @@ export interface IntensityProfile {
   mappingByTheme: Record<string, Record<string, RampPosition>>;
 }
 
+export interface OnColorThemeOverride {
+  foreground?: Partial<Record<ForegroundRole, TokenReference>>;
+  border?: Partial<Record<BorderRole, TokenReference>>;
+  provenance: Exclude<Provenance, "parent">;
+}
+
 export interface OnColorContract {
   backgroundRef: TokenReference;
   foreground: Record<ForegroundRole, TokenReference>;
@@ -173,6 +179,7 @@ export interface OnColorContract {
   borderSoftDecorative: boolean;
   compositeOn?: TokenReference;
   provenance: Exclude<Provenance, "parent">;
+  themeOverrides?: Record<string, OnColorThemeOverride>;
 }
 
 export interface SurfaceRecipe {
@@ -579,14 +586,21 @@ export type DraftOperation =
   | { type: "delete-theme"; themeId: string; reparentChildrenTo?: string }
   | {
       type: "set-on-color";
+      themeId: string;
       backgroundRefs: TokenReference[];
       target: OnColorRolePath;
       tokenRef: TokenReference;
       provenance: OnColorContract["provenance"];
     }
-  | { type: "auto-solve-on-color"; backgroundRefs: TokenReference[]; target: OnColorRolePath }
+  | {
+      type: "auto-solve-on-color";
+      themeId: string;
+      backgroundRefs: TokenReference[];
+      target: OnColorRolePath;
+    }
   | {
       type: "relative-on-color";
+      themeId: string;
       backgroundRefs: TokenReference[];
       target: OnColorRolePath;
       offset: number;
@@ -594,6 +608,7 @@ export type DraftOperation =
     }
   | {
       type: "interpolate-on-color";
+      themeId: string;
       backgroundRefs: TokenReference[];
       target: OnColorRolePath;
       startRef: TokenReference;
@@ -601,11 +616,12 @@ export type DraftOperation =
     }
   | {
       type: "copy-on-color-roles";
+      themeId: string;
       sourceBackgroundRef: TokenReference;
       backgroundRefs: TokenReference[];
       groups: Array<"foreground" | "border">;
     }
-  | { type: "reset-on-color"; backgroundRefs: TokenReference[] }
+  | { type: "reset-on-color"; themeId: string; backgroundRefs: TokenReference[] }
   | { type: "set-theme-override"; themeId: string; tokenRef: TokenReference; value: string | null }
   | { type: "set-surface-recipe"; recipe: SurfaceRecipe }
   | {

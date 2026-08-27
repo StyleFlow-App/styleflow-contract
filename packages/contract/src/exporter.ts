@@ -123,7 +123,10 @@ function assertPublicPayload(path: string, validation: ValidationResult): void {
     throw new BundleBuildError(
       "SF_BUNDLE_GENERATED_SCHEMA_INVALID",
       `Generated bundle entry "${path}" does not satisfy its included schema.`,
-      validation.diagnostics.map((diagnostic) => ({ ...diagnostic, path: `${path}${diagnostic.path}` })),
+      validation.diagnostics.map((diagnostic) => ({
+        ...diagnostic,
+        path: `${path}${diagnostic.path}`,
+      })),
     );
   }
 }
@@ -367,7 +370,8 @@ function fileEntry(path: string, bytes: Uint8Array): BundleFileEntry {
 }
 
 export function buildBundle(source: StyleflowProjectSource, options: BundleOptions): BuiltBundle {
-  const validation = validateProjectSource(source);
+  const canonicalSource = JSON.parse(canonicalStringify(source)) as StyleflowProjectSource;
+  const validation = validateProjectSource(canonicalSource);
   if (!validation.valid) {
     throw new BundleBuildError(
       "SF_BUNDLE_SCHEMA_INVALID",
@@ -375,7 +379,7 @@ export function buildBundle(source: StyleflowProjectSource, options: BundleOptio
       validation.diagnostics,
     );
   }
-  const compiled = compileProject(source);
+  const compiled = compileProject(canonicalSource);
   const structuralErrors = compiled.diagnostics.filter(
     (diagnostic) => diagnostic.blocking && !diagnostic.code.startsWith("SF_CONTRAST"),
   );
@@ -390,11 +394,11 @@ export function buildBundle(source: StyleflowProjectSource, options: BundleOptio
 
   const files = new Map<string, Uint8Array>();
   const contract = semanticContract(compiled);
-  const primitives = primitivesProjection(source);
-  const semantics = semanticProjection(source);
-  const layout = layoutProjection(source);
+  const primitives = primitivesProjection(canonicalSource);
+  const semantics = semanticProjection(canonicalSource);
+  const layout = layoutProjection(canonicalSource);
   const typography = typographyProjection(compiled);
-  const resolver = resolverProjection(source);
+  const resolver = resolverProjection(canonicalSource);
 
   assertPublicPayload("contract/styleflow.contract.json", validateSemanticContract(contract));
   for (const [path, payload] of [
@@ -402,19 +406,20 @@ export function buildBundle(source: StyleflowProjectSource, options: BundleOptio
     ["tokens/semantic.tokens.json", semantics],
     ["tokens/layout.tokens.json", layout],
     ["tokens/typography.tokens.json", typography],
-  ] as const) assertPublicPayload(path, validateDtcgTokens(payload));
+  ] as const)
+    assertPublicPayload(path, validateDtcgTokens(payload));
   assertPublicPayload("resolver/styleflow.resolver.json", validateResolverProjection(resolver));
   assertPublicPayload("diagnostics/diagnostics.json", validateDiagnostics(compiled.diagnostics));
 
-  addJson(files, "source/styleflow.project.json", source);
+  addJson(files, "source/styleflow.project.json", canonicalSource);
   addJson(files, "contract/styleflow.contract.json", contract);
   addJson(files, "tokens/primitives.tokens.json", primitives);
   addJson(files, "tokens/semantic.tokens.json", semantics);
   addJson(files, "tokens/layout.tokens.json", layout);
   addJson(files, "tokens/typography.tokens.json", typography);
-  for (const theme of source.themes) {
+  for (const theme of canonicalSource.themes) {
     const path = `tokens/themes/${theme.id}.tokens.json`;
-    const payload = themeProjection(source, theme.id);
+    const payload = themeProjection(canonicalSource, theme.id);
     assertPublicPayload(path, validateDtcgTokens(payload));
     addJson(files, path, payload);
   }
@@ -437,13 +442,13 @@ export function buildBundle(source: StyleflowProjectSource, options: BundleOptio
   addJson(files, "schemas/resolver.schema.json", resolverSchema);
   addJson(files, "schemas/tokens.schema.json", tokensSchema);
 
-  const sourceText = canonicalStringify(source);
+  const sourceText = canonicalStringify(canonicalSource);
   const contentHash = `sha256-${hashText(sourceText)}`;
   const manifest: BundleManifest = {
     mediaType: "application/vnd.styleflow.bundle+zip",
     bundleVersion: BUNDLE_VERSION,
     kind: options.kind,
-    project: source.project,
+    project: canonicalSource.project,
     ...(options.kind === "release"
       ? {
           release: {
@@ -493,6 +498,6 @@ export function buildBundle(source: StyleflowProjectSource, options: BundleOptio
     bytes,
     sha256: bundleHash,
     manifest,
-    filename: `${source.project.slug}-${identity}-${bundleHash.slice(0, 8)}.styleflow.zip`,
+    filename: `${canonicalSource.project.slug}-${identity}-${bundleHash.slice(0, 8)}.styleflow.zip`,
   };
 }

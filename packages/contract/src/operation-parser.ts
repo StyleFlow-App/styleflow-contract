@@ -153,6 +153,7 @@ function structurallyValid(value: Record<string, unknown>): boolean {
       );
     case "set-on-color":
       return (
+        isIdentifier(value.themeId) &&
         Array.isArray(value.backgroundRefs) &&
         value.backgroundRefs.every(isTokenReference) &&
         isTarget(value.target) &&
@@ -161,12 +162,14 @@ function structurallyValid(value: Record<string, unknown>): boolean {
       );
     case "auto-solve-on-color":
       return (
+        isIdentifier(value.themeId) &&
         Array.isArray(value.backgroundRefs) &&
         value.backgroundRefs.every(isTokenReference) &&
         isTarget(value.target)
       );
     case "relative-on-color":
       return (
+        isIdentifier(value.themeId) &&
         Array.isArray(value.backgroundRefs) &&
         value.backgroundRefs.every(isTokenReference) &&
         isTarget(value.target) &&
@@ -176,6 +179,7 @@ function structurallyValid(value: Record<string, unknown>): boolean {
       );
     case "interpolate-on-color":
       return (
+        isIdentifier(value.themeId) &&
         Array.isArray(value.backgroundRefs) &&
         value.backgroundRefs.every(isTokenReference) &&
         isTarget(value.target) &&
@@ -184,6 +188,7 @@ function structurallyValid(value: Record<string, unknown>): boolean {
       );
     case "copy-on-color-roles":
       return (
+        isIdentifier(value.themeId) &&
         isTokenReference(value.sourceBackgroundRef) &&
         Array.isArray(value.backgroundRefs) &&
         value.backgroundRefs.every(isTokenReference) &&
@@ -191,7 +196,11 @@ function structurallyValid(value: Record<string, unknown>): boolean {
         value.groups.every((item) => item === "foreground" || item === "border")
       );
     case "reset-on-color":
-      return Array.isArray(value.backgroundRefs) && value.backgroundRefs.every(isTokenReference);
+      return (
+        isIdentifier(value.themeId) &&
+        Array.isArray(value.backgroundRefs) &&
+        value.backgroundRefs.every(isTokenReference)
+      );
     case "set-theme-override":
       return (
         validIds(value, "themeId") &&

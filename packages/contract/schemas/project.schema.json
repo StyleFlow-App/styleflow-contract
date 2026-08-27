@@ -282,7 +282,38 @@
         },
         "borderSoftDecorative": { "type": "boolean" },
         "compositeOn": { "$ref": "#/$defs/tokenReference" },
-        "provenance": { "enum": ["generated", "bulk", "manual"] }
+        "provenance": { "enum": ["generated", "bulk", "manual"] },
+        "themeOverrides": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["provenance"],
+            "properties": {
+              "foreground": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "primary": { "$ref": "#/$defs/tokenReference" },
+                  "secondary": { "$ref": "#/$defs/tokenReference" },
+                  "tertiary": { "$ref": "#/$defs/tokenReference" },
+                  "muted": { "$ref": "#/$defs/tokenReference" },
+                  "accent": { "$ref": "#/$defs/tokenReference" }
+                }
+              },
+              "border": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "default": { "$ref": "#/$defs/tokenReference" },
+                  "soft": { "$ref": "#/$defs/tokenReference" },
+                  "strong": { "$ref": "#/$defs/tokenReference" }
+                }
+              },
+              "provenance": { "enum": ["generated", "bulk", "manual"] }
+            }
+          }
+        }
       }
     },
     "surface": {

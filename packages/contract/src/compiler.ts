@@ -536,6 +536,7 @@ export function compileProject(source: StyleflowProjectSource): CompiledProject 
         missingReference(theme.canvasToken, `/themes/${theme.id}/canvasToken`, theme.id),
       );
     const onColors: ResolvedOnColor[] = source.colors.onColors.map((contract, contractIndex) => {
+      const themeOverride = contract.themeOverrides?.[theme.id];
       const background = resolveToken(contract.backgroundRef) ?? undefined;
       if (!background)
         themeDiagnostics.push(
@@ -550,22 +551,19 @@ export function compileProject(source: StyleflowProjectSource): CompiledProject 
         : canvas;
       const foreground = {} as ResolvedOnColor["foreground"];
       for (const role of FOREGROUND_ROLES) {
-        const reference = contract.foreground[role];
+        const overriddenReference = themeOverride?.foreground?.[role];
+        const reference = overriddenReference ?? contract.foreground[role];
+        const referencePath = overriddenReference
+          ? `/colors/onColors/${contractIndex}/themeOverrides/${theme.id}/foreground/${role}`
+          : `/colors/onColors/${contractIndex}/foreground/${role}`;
         const value = resolveToken(reference) ?? undefined;
-        if (!value)
-          themeDiagnostics.push(
-            missingReference(
-              reference,
-              `/colors/onColors/${contractIndex}/foreground/${role}`,
-              theme.id,
-            ),
-          );
+        if (!value) themeDiagnostics.push(missingReference(reference, referencePath, theme.id));
         const ratio = ratioOrZero(value, background, compositeCanvas);
         foreground[role as ForegroundRole] = { reference, value: value ?? "#00000000", ratio };
         if (value && background && ratio < threshold)
           themeDiagnostics.push(
             contrastDiagnostic(
-              `/colors/onColors/${contractIndex}/foreground/${role}`,
+              referencePath,
               theme.id,
               `foreground.${role}`,
               ratio,
@@ -576,22 +574,19 @@ export function compileProject(source: StyleflowProjectSource): CompiledProject 
       }
       const border = {} as ResolvedOnColor["border"];
       for (const role of BORDER_ROLES) {
-        const reference = contract.border[role];
+        const overriddenReference = themeOverride?.border?.[role];
+        const reference = overriddenReference ?? contract.border[role];
+        const referencePath = overriddenReference
+          ? `/colors/onColors/${contractIndex}/themeOverrides/${theme.id}/border/${role}`
+          : `/colors/onColors/${contractIndex}/border/${role}`;
         const value = resolveToken(reference) ?? undefined;
-        if (!value)
-          themeDiagnostics.push(
-            missingReference(
-              reference,
-              `/colors/onColors/${contractIndex}/border/${role}`,
-              theme.id,
-            ),
-          );
+        if (!value) themeDiagnostics.push(missingReference(reference, referencePath, theme.id));
         const ratio = ratioOrZero(value, background, compositeCanvas);
         border[role as BorderRole] = { reference, value: value ?? "#00000000", ratio };
         if (!(role === "soft" && contract.borderSoftDecorative) && value && background && ratio < 3)
           themeDiagnostics.push(
             contrastDiagnostic(
-              `/colors/onColors/${contractIndex}/border/${role}`,
+              referencePath,
               theme.id,
               `border.${role}`,
               ratio,
@@ -606,7 +601,7 @@ export function compileProject(source: StyleflowProjectSource): CompiledProject 
         foreground,
         border,
         borderSoftDecorative: contract.borderSoftDecorative,
-        provenance: contract.provenance,
+        provenance: themeOverride?.provenance ?? contract.provenance,
       };
     });
     const onColorByBackground = new Map(onColors.map((item) => [item.backgroundRef, item]));

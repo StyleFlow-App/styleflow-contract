@@ -256,6 +256,16 @@ function validateColors(source: StyleflowProjectSource): Diagnostic[] {
   }
   const onColorRefs = new Set(source.colors.onColors.map((item) => item.backgroundRef));
   const themeIds = new Set(source.themes.map((item) => item.id));
+  for (const [contractIndex, contract] of source.colors.onColors.entries())
+    for (const themeId of Object.keys(contract.themeOverrides ?? {}))
+      if (!themeIds.has(themeId))
+        diagnostics.push(
+          problem(
+            "SF_ON_COLOR_THEME_MISSING",
+            `/colors/onColors/${contractIndex}/themeOverrides/${themeId}`,
+            `On-color override references missing theme "${themeId}".`,
+          ),
+        );
   for (const [index, profile] of source.colors.intensityProfiles.entries()) {
     if (!rampIds.has(profile.toneId))
       diagnostics.push(

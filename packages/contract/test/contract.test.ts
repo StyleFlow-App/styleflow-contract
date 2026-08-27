@@ -143,6 +143,18 @@ describe("granular operation boundary", () => {
     );
   });
 
+  it("requires an explicit theme for every on-color authoring operation", () => {
+    const operation = {
+      type: "set-on-color",
+      backgroundRefs: ["color.main.base"],
+      target: { group: "foreground", role: "primary" },
+      tokenRef: "color.neutral.strong-2",
+      provenance: "manual",
+    };
+    expect(parseDraftOperationBatch([operation]).success).toBe(false);
+    expect(parseDraftOperationBatch([{ ...operation, themeId: "dark" }]).success).toBe(true);
+  });
+
   it("reports precise affected paths for cell and contextual changes", () => {
     expect(
       affectedPaths({
@@ -170,6 +182,98 @@ describe("granular operation boundary", () => {
         ],
       }),
     ).toEqual(["/colors/interactions/mappings/dark:color.main.base:primary"]);
+  });
+});
+
+describe("theme-scoped on-color authoring", () => {
+  it("changes foreground and border only in the selected theme", () => {
+    const source = createPresetSource();
+    const backgroundRef = "color.main.base" as const;
+    const baseline = compileProject(source);
+    const lightBefore = baseline.themes
+      .find((theme) => theme.id === "light")!
+      .onColors.find((contract) => contract.backgroundRef === backgroundRef)!;
+    const darkBefore = baseline.themes
+      .find((theme) => theme.id === "dark")!
+      .onColors.find((contract) => contract.backgroundRef === backgroundRef)!;
+    const changed = applyDraftOperations(source, [
+      {
+        type: "set-on-color",
+        themeId: "dark",
+        backgroundRefs: [backgroundRef],
+        target: { group: "foreground", role: "primary" },
+        tokenRef: "color.accent.base",
+        provenance: "manual",
+      },
+      {
+        type: "set-on-color",
+        themeId: "dark",
+        backgroundRefs: [backgroundRef],
+        target: { group: "border", role: "strong" },
+        tokenRef: "color.accent.strong-2",
+        provenance: "manual",
+      },
+    ]);
+    const compiled = compileProject(changed);
+    const lightAfter = compiled.themes
+      .find((theme) => theme.id === "light")!
+      .onColors.find((contract) => contract.backgroundRef === backgroundRef)!;
+    const darkAfter = compiled.themes
+      .find((theme) => theme.id === "dark")!
+      .onColors.find((contract) => contract.backgroundRef === backgroundRef)!;
+
+    expect(lightAfter.foreground.primary.reference).toBe(lightBefore.foreground.primary.reference);
+    expect(lightAfter.border.strong.reference).toBe(lightBefore.border.strong.reference);
+    expect(darkAfter.foreground.primary.reference).toBe("color.accent.base");
+    expect(darkAfter.border.strong.reference).toBe("color.accent.strong-2");
+    expect(darkAfter.foreground.primary.reference).not.toBe(
+      darkBefore.foreground.primary.reference,
+    );
+    expect(changed.colors.onColors.find((item) => item.backgroundRef === backgroundRef)).toEqual(
+      expect.objectContaining({
+        foreground: source.colors.onColors.find((item) => item.backgroundRef === backgroundRef)!
+          .foreground,
+        themeOverrides: {
+          dark: expect.objectContaining({
+            foreground: { primary: "color.accent.base" },
+            border: { strong: "color.accent.strong-2" },
+            provenance: "manual",
+          }),
+        },
+      }),
+    );
+  });
+
+  it("resets only the selected theme override and rejects stale theme IDs", () => {
+    const source = createPresetSource();
+    const backgroundRefs = ["color.main.base" as const];
+    const changed = applyDraftOperations(source, [
+      {
+        type: "set-on-color",
+        themeId: "dark",
+        backgroundRefs,
+        target: { group: "foreground", role: "primary" },
+        tokenRef: "color.accent.base",
+        provenance: "manual",
+      },
+      { type: "reset-on-color", themeId: "dark", backgroundRefs },
+    ]);
+    expect(
+      changed.colors.onColors.find((item) => item.backgroundRef === backgroundRefs[0])
+        ?.themeOverrides,
+    ).toBeUndefined();
+    expect(() =>
+      applyDraftOperations(source, [
+        {
+          type: "set-on-color",
+          themeId: "missing",
+          backgroundRefs,
+          target: { group: "foreground", role: "primary" },
+          tokenRef: "color.accent.base",
+          provenance: "manual",
+        },
+      ]),
+    ).toThrow(/Unknown theme/);
   });
 });
 
@@ -864,7 +968,7 @@ describe("deterministic bundle", () => {
     const manifest = JSON.parse(new TextDecoder().decode(entries["styleflow.manifest.json"])) as {
       compiler: { version: string };
     };
-    expect(manifest.compiler.version).toBe("1.0.0-beta.1");
+    expect(manifest.compiler.version).toBe("1.0.0-beta.2");
     const imported = importBundle(first.bytes);
     expect(imported.contract.axes.layout.roles).toContain("stack");
     expect(imported.contract.axes.layout.roles).toContain("tile");
@@ -884,6 +988,21 @@ describe("deterministic bundle", () => {
       const [expectedHash, path] = line.split("  ");
       expect(bytesToHex(sha256(entries[path!]!))).toBe(expectedHash);
     }
+  });
+
+  it("canonicalizes object key insertion order before compiling the bundle", () => {
+    const source = createPresetSource();
+    const reordered = structuredClone(source) as StyleflowProjectSource;
+    for (const surface of reordered.colors.surfaces) {
+      const { default: defaultBackground, raised, sunken } = surface.backgrounds;
+      surface.backgrounds = { raised, sunken, default: defaultBackground };
+    }
+    const options = { kind: "preview" as const, sourceRevision: 8 };
+    const canonicalBundle = buildBundle(source, options);
+    const reorderedBundle = buildBundle(reordered, options);
+
+    expect(reorderedBundle.bytes).toEqual(canonicalBundle.bytes);
+    expect(() => importBundle(reorderedBundle.bytes)).not.toThrow();
   });
 
   it("rejects tampering and unsafe paths", () => {
