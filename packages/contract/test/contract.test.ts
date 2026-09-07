@@ -984,6 +984,8 @@ describe("color engine", () => {
       "950": "#001534",
       "1000": "#000000",
     });
+    for (const stop of perceived.stops)
+      expect(stop.source.chroma).toBe(Number(stop.source.chroma.toFixed(12)));
     expect(linear.stops.find((stop) => stop.position === "950")?.value).toBe("#052851");
   });
 

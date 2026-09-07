@@ -48,6 +48,11 @@ export const RAMP_LIGHTNESS_BY_POSITION: Readonly<Record<AnchorPosition, number>
 
 export const OKLCH_JND = 0.02;
 const NEUTRAL_CHROMA_THRESHOLD = 0.0005;
+const GENERATED_COLOR_COORDINATE_PRECISION = 12;
+
+function canonicalGeneratedCoordinate(value: number): number {
+  return Number(value.toFixed(GENERATED_COLOR_COORDINATE_PRECISION));
+}
 
 function normalizeHue(value: number): number {
   return ((value % 360) + 360) % 360;
@@ -308,14 +313,16 @@ export function generateColorRamp(
     const neutral = baseSource.chroma < NEUTRAL_CHROMA_THRESHOLD;
     const source: OklchColorValue = {
       ...baseSource,
-      lightness,
+      lightness: canonicalGeneratedCoordinate(lightness),
       chroma: neutral
         ? 0
-        : Math.max(
-            0,
-            baseSource.chroma *
-              (chromaEnvelope(lightness) / baseEnvelope) *
-              (1 + generator.saturationAdjustment),
+        : canonicalGeneratedCoordinate(
+            Math.max(
+              0,
+              baseSource.chroma *
+                (chromaEnvelope(lightness) / baseEnvelope) *
+                (1 + generator.saturationAdjustment),
+            ),
           ),
       hue: neutral ? 0 : baseSource.hue,
     };
