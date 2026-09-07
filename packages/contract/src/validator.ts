@@ -4,6 +4,7 @@ import projectSchema from "../schemas/project.schema.json";
 import manifestSchema from "../schemas/manifest.schema.json";
 import contractSchema from "../schemas/contract.schema.json";
 import diagnosticsSchema from "../schemas/diagnostics.schema.json";
+import figmaSchema from "../schemas/figma.schema.json";
 import resolverSchema from "../schemas/resolver.schema.json";
 import tokensSchema from "../schemas/tokens.schema.json";
 import { validateProjectSemantics } from "./semantic-validator";
@@ -14,6 +15,7 @@ const validateProjectSchema = ajv.compile(projectSchema);
 const validateManifestSchema = ajv.compile(manifestSchema);
 const validateContractSchema = ajv.compile(contractSchema);
 const validateDiagnosticsSchema = ajv.compile(diagnosticsSchema);
+const validateFigmaSchema = ajv.compile(figmaSchema);
 const validateResolverSchema = ajv.compile(resolverSchema);
 const validateTokensSchema = ajv.compile(tokensSchema);
 
@@ -80,6 +82,10 @@ export function validateSemanticContract(input: unknown): ValidationResult {
 
 export function validateDiagnostics(input: unknown): ValidationResult {
   return validatePublicPayload(input, validateDiagnosticsSchema);
+}
+
+export function validateFigmaProjection(input: unknown): ValidationResult {
+  return validatePublicPayload(input, validateFigmaSchema);
 }
 
 export function validateResolverProjection(input: unknown): ValidationResult {

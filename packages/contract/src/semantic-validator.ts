@@ -355,21 +355,13 @@ function validateColors(source: StyleflowProjectSource): Diagnostic[] {
             [theme.id],
           ),
         );
-      if (mapping?.base && ramp && mapping.base !== ramp.generator.basePosition)
-        diagnostics.push(
-          problem(
-            "SF_INTENSITY_BASE_MAPPING_INVALID",
-            `/colors/intensityProfiles/${index}/mappingByTheme/${theme.id}/base`,
-            `Base in ${theme.label} must resolve to the authored ${ramp.generator.basePosition} anchor.`,
-            "Review the atomic Base alignment; use Soft or Strong levels for theme-specific distance.",
-            [theme.id],
-          ),
-        );
-      if (ramp) {
-        const baseIndex = ANCHOR_POSITIONS.indexOf(ramp.generator.basePosition);
+      if (ramp && mapping?.base) {
+        const base = Number(mapping.base);
         const dark = theme.polarity === "dark" || theme.parentId === "dark";
-        const softAvailable = dark ? ANCHOR_POSITIONS.length - baseIndex - 1 : baseIndex;
-        const strongAvailable = dark ? baseIndex : ANCHOR_POSITIONS.length - baseIndex - 1;
+        const lighter = ANCHOR_POSITIONS.filter((position) => Number(position) < base).length;
+        const darker = ANCHOR_POSITIONS.filter((position) => Number(position) > base).length;
+        const softAvailable = dark ? darker : lighter;
+        const strongAvailable = dark ? lighter : darker;
         const softRequired = profile.levels.filter((level) => level.id.startsWith("soft-")).length;
         const strongRequired = profile.levels.filter((level) =>
           level.id.startsWith("strong-"),
@@ -380,7 +372,7 @@ function validateColors(source: StyleflowProjectSource): Diagnostic[] {
             severity: "warning",
             blocking: false,
             path: `/colors/intensityProfiles/${index}/mappingByTheme/${theme.id}`,
-            message: `Ramp "${ramp.id}" has limited anchor headroom around Base ${ramp.generator.basePosition} in ${theme.label}.`,
+            message: `Ramp "${ramp.id}" has limited anchor headroom around Base ${mapping.base} in ${theme.label}.`,
             suggestion: "Reduce the intensity count or review repeated extreme mappings.",
             themeIds: [theme.id],
           });

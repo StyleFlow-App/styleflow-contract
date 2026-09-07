@@ -1,6 +1,6 @@
 {
   "name": "@styleflow.app/contract",
-  "version": "1.0.0-beta.2",
+  "version": "1.0.0-beta.6",
   "private": false,
   "description": "Pure Styleflow vNext source, validation, compilation and deterministic bundle contract.",
   "license": "MIT",
@@ -23,6 +23,10 @@
       "types": "./dist/browser.d.ts",
       "import": "./dist/browser.js"
     },
+    "./figma": {
+      "types": "./dist/figma.d.ts",
+      "import": "./dist/figma.js"
+    },
     "./schemas/*": "./schemas/*"
   },
   "files": [
@@ -35,10 +39,11 @@
     "provenance": true
   },
   "scripts": {
-    "build": "tsup src/index.ts src/browser.ts --format esm --dts --clean",
+    "build": "tsup src/index.ts src/browser.ts src/figma.ts --format esm --dts --clean",
     "prepack": "pnpm build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:golden": "pnpm build && node scripts/verify-golden.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {

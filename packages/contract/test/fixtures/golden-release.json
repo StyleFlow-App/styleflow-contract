@@ -1,0 +1,10 @@
+{
+  "fixture": "production-preset",
+  "contractVersion": "1.0.0-beta.6",
+  "sourceRevision": 7,
+  "version": "1.0.0-beta.1",
+  "sha256": "f3336863de222e3d43db39bce7172b7ef7748068a65d85510f7e2b19f298612a",
+  "byteLength": 180612,
+  "contentHash": "sha256-ddfb7e5d600c82e3d788fad4aebe1a4c3293cd9b137558656864a80b7541123d",
+  "filename": "styleflow-foundation-v1.0.0-beta.1-f3336863.styleflow.zip"
+}

@@ -1,8 +1,8 @@
 export const CONTRACT_PACKAGE_NAME = "@styleflow.app/contract" as const;
-export const CONTRACT_VERSION = "1.0.0-beta.2" as const;
+export const CONTRACT_VERSION = "1.0.0-beta.6" as const;
 export const FORMAT_VERSION = "1.0.0" as const;
 export const BUNDLE_VERSION = "1.0.0" as const;
-export const OPERATION_PROTOCOL_VERSION = "1.0.0-beta.2" as const;
+export const OPERATION_PROTOCOL_VERSION = "1.0.0-beta.6" as const;
 
 export const ANCHOR_POSITIONS = [
   "000",
@@ -99,7 +99,12 @@ export interface AccessibilitySettings {
 }
 export interface TargetSettings {
   figmaModeLimit: number;
+  figmaFontMappings?: Record<string, FigmaFontMapping>;
   styleflowCli: "vnext";
+}
+export interface FigmaFontMapping {
+  family: string;
+  stylesByWeight: Record<string, string>;
 }
 export interface AuthoringSettings {
   setupStatus: "incomplete" | "complete";
@@ -163,6 +168,7 @@ export interface IntensityLevelDefinition {
 export interface IntensityProfile {
   toneId: string;
   levels: IntensityLevelDefinition[];
+  /** Per-theme semantic mappings, including base. A base equal to the ramp base follows regeneration. */
   mappingByTheme: Record<string, Record<string, RampPosition>>;
 }
 
@@ -562,6 +568,7 @@ export type DraftOperation =
   | { type: "replace-source"; source: StyleflowProjectSource; reason: "import" | "restore" }
   | { type: "set-project-metadata"; name: string; description?: string }
   | { type: "set-accessibility"; level: AccessibilityLevel; policy: AccessibilityPolicy }
+  | { type: "set-figma-font-mapping"; fontSlotId: string; mapping: FigmaFontMapping | null }
   | { type: "set-authoring-status"; status: AuthoringSettings["setupStatus"] }
   | { type: "create-color-ramp"; ramp: ColorRamp }
   | {

@@ -4,12 +4,14 @@ import { strToU8, zipSync, type Zippable } from "fflate";
 
 import contractSchema from "../schemas/contract.schema.json";
 import diagnosticsSchema from "../schemas/diagnostics.schema.json";
+import figmaSchema from "../schemas/figma.schema.json";
 import manifestSchema from "../schemas/manifest.schema.json";
 import projectSchema from "../schemas/project.schema.json";
 import resolverSchema from "../schemas/resolver.schema.json";
 import tokensSchema from "../schemas/tokens.schema.json";
 import { compileProject } from "./compiler";
 import { parseHexColor } from "./color";
+import { buildFigmaProjection, FIGMA_PROJECTION_PATH } from "./figma-projection";
 import {
   BUNDLE_VERSION,
   CONTRACT_PACKAGE_NAME,
@@ -25,6 +27,7 @@ import {
   validateBundleManifest,
   validateDiagnostics,
   validateDtcgTokens,
+  validateFigmaProjection,
   validateProjectSource,
   validateResolverProjection,
   validateSemanticContract,
@@ -32,7 +35,9 @@ import {
 } from "./validator";
 
 const encoder = new TextEncoder();
-const FIXED_ZIP_DATE = new Date("1980-01-01T00:00:00.000Z");
+// fflate serializes ZIP timestamps through local-time getters. Constructing the
+// epoch in local time keeps the DOS timestamp identical across time zones.
+const FIXED_ZIP_DATE = new Date(1980, 0, 1, 0, 0, 0, 0);
 const JSON_MEDIA_TYPE = "application/json";
 
 export interface BundleFileEntry {
@@ -380,6 +385,8 @@ export function buildBundle(source: StyleflowProjectSource, options: BundleOptio
     );
   }
   const compiled = compileProject(canonicalSource);
+  const sourceText = canonicalStringify(canonicalSource);
+  const contentHash = `sha256-${hashText(sourceText)}`;
   const structuralErrors = compiled.diagnostics.filter(
     (diagnostic) => diagnostic.blocking && !diagnostic.code.startsWith("SF_CONTRAST"),
   );
@@ -435,15 +442,22 @@ export function buildBundle(source: StyleflowProjectSource, options: BundleOptio
     addJson(files, resolvedTokensPath, resolvedTokens);
   }
   addJson(files, "diagnostics/diagnostics.json", compiled.diagnostics);
+  if (compiled.targets["figma-vnext"].status === "supported") {
+    const figmaProjection = buildFigmaProjection(compiled, {
+      sourceRevision: options.sourceRevision,
+      contentHash,
+    });
+    assertPublicPayload(FIGMA_PROJECTION_PATH, validateFigmaProjection(figmaProjection));
+    addJson(files, FIGMA_PROJECTION_PATH, figmaProjection);
+  }
   addJson(files, "schemas/manifest.schema.json", manifestSchema);
   addJson(files, "schemas/project.schema.json", projectSchema);
   addJson(files, "schemas/contract.schema.json", contractSchema);
   addJson(files, "schemas/diagnostics.schema.json", diagnosticsSchema);
+  addJson(files, "schemas/figma.schema.json", figmaSchema);
   addJson(files, "schemas/resolver.schema.json", resolverSchema);
   addJson(files, "schemas/tokens.schema.json", tokensSchema);
 
-  const sourceText = canonicalStringify(canonicalSource);
-  const contentHash = `sha256-${hashText(sourceText)}`;
   const manifest: BundleManifest = {
     mediaType: "application/vnd.styleflow.bundle+zip",
     bundleVersion: BUNDLE_VERSION,
@@ -487,7 +501,10 @@ export function buildBundle(source: StyleflowProjectSource, options: BundleOptio
   const zippable: Zippable = Object.fromEntries(
     [...files.entries()]
       .sort(([left], [right]) => left.localeCompare(right, "en"))
-      .map(([path, bytes]) => [path, [bytes, { level: 9, mtime: FIXED_ZIP_DATE }]]),
+      .map(([path, bytes]) => [
+        path,
+        [bytes, { level: 9, mtime: FIXED_ZIP_DATE, os: 0, attrs: 0 }],
+      ]),
   );
   const bytes = zipSync(zippable, { level: 9 });
   const bundleHash = hashBytes(bytes);

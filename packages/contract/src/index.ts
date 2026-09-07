@@ -1,6 +1,7 @@
 export * from "./color";
 export * from "./compiler";
 export * from "./exporter";
+export * from "./figma-projection";
 export * from "./importer";
 export * from "./operations";
 export * from "./operation-parser";

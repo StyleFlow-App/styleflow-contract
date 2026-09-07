@@ -1,0 +1,285 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.styleflow.app/v2.1/figma.schema.json",
+  "title": "Styleflow Figma Projection v2.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "project",
+    "sourceRevision",
+    "contentHash",
+    "axes",
+    "modeCollections",
+    "availability",
+    "collections",
+    "textStyles",
+    "bindings",
+    "diagnostics"
+  ],
+  "properties": {
+    "formatVersion": { "const": "2.1.0" },
+    "project": { "$ref": "#/$defs/project" },
+    "sourceRevision": { "type": "integer", "minimum": 0 },
+    "contentHash": { "type": "string", "pattern": "^sha256-[0-9a-f]{64}$" },
+    "axes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["theme", "tone", "intensity", "layoutRole", "density", "breakpoint"],
+      "properties": {
+        "theme": { "$ref": "#/$defs/modes" },
+        "tone": { "$ref": "#/$defs/modes" },
+        "intensity": { "$ref": "#/$defs/modes" },
+        "layoutRole": { "$ref": "#/$defs/modes" },
+        "density": { "$ref": "#/$defs/modes" },
+        "breakpoint": { "$ref": "#/$defs/modes" }
+      }
+    },
+    "modeCollections": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["theme", "tone", "intensity", "layoutRole", "density", "breakpoint"],
+      "properties": {
+        "theme": { "$ref": "#/$defs/collectionIds" },
+        "tone": { "$ref": "#/$defs/collectionIds" },
+        "intensity": { "$ref": "#/$defs/collectionIds" },
+        "layoutRole": { "$ref": "#/$defs/collectionIds" },
+        "density": { "$ref": "#/$defs/collectionIds" },
+        "breakpoint": { "$ref": "#/$defs/collectionIds" }
+      }
+    },
+    "availability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intensityByTone", "modeIdsByCollection"],
+      "properties": {
+        "intensityByTone": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "uniqueItems": true,
+            "items": { "$ref": "#/$defs/identifier" }
+          }
+        },
+        "modeIdsByCollection": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "uniqueItems": true,
+            "items": { "$ref": "#/$defs/identifier" }
+          }
+        }
+      }
+    },
+    "collections": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/collection" }
+    },
+    "textStyles": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/textStyle" }
+    },
+    "bindings": { "$ref": "#/$defs/bindings" },
+    "diagnostics": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "type": "object" }
+    }
+  },
+  "$defs": {
+    "identifier": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$" },
+    "path": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "slug", "name"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "slug": { "$ref": "#/$defs/identifier" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 2000 }
+      }
+    },
+    "mode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 }
+      }
+    },
+    "modes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "items": { "$ref": "#/$defs/mode" }
+    },
+    "collectionIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "value": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "variablePath"],
+          "properties": {
+            "kind": { "const": "alias" },
+            "variablePath": { "$ref": "#/$defs/path" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "r", "g", "b", "a"],
+          "properties": {
+            "kind": { "const": "color" },
+            "r": { "type": "number", "minimum": 0, "maximum": 1 },
+            "g": { "type": "number", "minimum": 0, "maximum": 1 },
+            "b": { "type": "number", "minimum": 0, "maximum": 1 },
+            "a": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "float" },
+            "value": { "type": "number" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "string" },
+            "value": { "type": "string", "maxLength": 10000 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "boolean" },
+            "value": { "type": "boolean" }
+          }
+        }
+      ]
+    },
+    "variable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "name", "type", "scopes", "valuesByMode"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "type": { "enum": ["COLOR", "FLOAT", "STRING", "BOOLEAN"] },
+        "scopes": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "FRAME_FILL",
+              "SHAPE_FILL",
+              "TEXT_FILL",
+              "STROKE_COLOR",
+              "GAP",
+              "CORNER_RADIUS",
+              "STROKE_FLOAT",
+              "OPACITY"
+            ]
+          }
+        },
+        "valuesByMode": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 10,
+          "additionalProperties": { "$ref": "#/$defs/value" }
+        }
+      }
+    },
+    "collection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "modes", "variables"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "modes": { "$ref": "#/$defs/modes" },
+        "variables": {
+          "type": "array",
+          "maxItems": 50000,
+          "items": { "$ref": "#/$defs/variable" }
+        }
+      }
+    },
+    "textStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "fontFamily", "fontStyle", "textCase", "variablePaths"],
+      "properties": {
+        "id": { "$ref": "#/$defs/path" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "fontFamily": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "fontStyle": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "textCase": { "enum": ["original", "uppercase", "lowercase", "title"] },
+        "variablePaths": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["fontSize", "lineHeight", "letterSpacing"],
+          "properties": {
+            "fontSize": { "$ref": "#/$defs/path" },
+            "lineHeight": { "$ref": "#/$defs/path" },
+            "letterSpacing": { "$ref": "#/$defs/path" }
+          }
+        }
+      }
+    },
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/path" }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["color", "layout", "typography"],
+      "properties": {
+        "color": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["background", "foreground", "border", "surfaces", "interactions"],
+          "properties": {
+            "background": { "$ref": "#/$defs/path" },
+            "foreground": { "$ref": "#/$defs/stringMap" },
+            "border": { "$ref": "#/$defs/stringMap" },
+            "surfaces": { "$ref": "#/$defs/stringMap" },
+            "interactions": {
+              "type": "object",
+              "additionalProperties": { "$ref": "#/$defs/stringMap" }
+            }
+          }
+        },
+        "layout": { "$ref": "#/$defs/stringMap" },
+        "typography": { "$ref": "#/$defs/stringMap" }
+      }
+    }
+  }
+}

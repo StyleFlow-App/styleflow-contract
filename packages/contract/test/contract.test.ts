@@ -3,6 +3,9 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import { unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 
+import goldenBundle from "./fixtures/golden-release.json";
+import { FigmaBundleImportError, importFigmaBundle } from "../src/figma";
+
 import {
   affectedPaths,
   applyDraftOperations,
@@ -12,6 +15,7 @@ import {
   compileProject,
   contrastRatio,
   createPresetSource,
+  evaluateFigmaTarget,
   generateColorRamp,
   importBundle,
   INTERACTION_STATES,
@@ -25,6 +29,36 @@ import {
   type ColorRamp,
   type StyleflowProjectSource,
 } from "../src";
+
+function rewriteFigmaProjection(
+  bytes: Uint8Array,
+  mutate: (projection: Record<string, unknown>) => void,
+): Uint8Array {
+  const files = unzipSync(bytes);
+  const encoder = new TextEncoder();
+  const projectionPath = "targets/figma-vnext.json";
+  const manifestPath = "styleflow.manifest.json";
+  const projection = JSON.parse(new TextDecoder().decode(files[projectionPath]!)) as Record<
+    string,
+    unknown
+  >;
+  mutate(projection);
+  files[projectionPath] = encoder.encode(stableStringify(projection));
+  const manifest = JSON.parse(new TextDecoder().decode(files[manifestPath]!)) as {
+    files: Array<{ path: string; bytes: number; sha256: string }>;
+  };
+  const entry = manifest.files.find((item) => item.path === projectionPath)!;
+  entry.bytes = files[projectionPath]!.byteLength;
+  entry.sha256 = bytesToHex(sha256(files[projectionPath]!));
+  files[manifestPath] = encoder.encode(stableStringify(manifest));
+  const payloadPaths = Object.keys(files)
+    .filter((path) => path !== "checksums.sha256")
+    .sort();
+  files["checksums.sha256"] = encoder.encode(
+    `${payloadPaths.map((path) => `${bytesToHex(sha256(files[path]!))}  ${path}`).join("\n")}\n`,
+  );
+  return zipSync(files);
+}
 
 describe("Styleflow project source", () => {
   it("validates the production preset and its complete matrices", () => {
@@ -141,6 +175,18 @@ describe("granular operation boundary", () => {
     expect(parseDraftOperationBatch([{ type: "set-typography", typography: {} }]).success).toBe(
       false,
     );
+    expect(
+      parseDraftOperationBatch([
+        {
+          type: "set-figma-font-mapping",
+          fontSlotId: "main",
+          mapping: {
+            family: "Manrope",
+            stylesByWeight: { default: "Regular", strong: "Bold" },
+          },
+        },
+      ]).success,
+    ).toBe(true);
   });
 
   it("requires an explicit theme for every on-color authoring operation", () => {
@@ -386,7 +432,7 @@ describe("color CRUD and dependency remap", () => {
     ).toBe("700");
   });
 
-  it("keeps Base authored and intensity names canonical", () => {
+  it("keeps the ramp base authored and intensity names canonical", () => {
     const source = createPresetSource();
     const main = source.colors.ramps.find((item) => item.id === "main")!;
     expect(() =>
@@ -423,7 +469,7 @@ describe("color CRUD and dependency remap", () => {
           position: "700",
         },
       ]),
-    ).toThrow(/authored base color/);
+    ).not.toThrow();
     expect(() =>
       applyDraftOperations(source, [
         {
@@ -955,6 +1001,25 @@ describe("color engine", () => {
 });
 
 describe("deterministic bundle", () => {
+  it("matches the cross-runtime golden release", () => {
+    const bundle = buildBundle(createPresetSource(), {
+      kind: "release",
+      sourceRevision: goldenBundle.sourceRevision,
+      version: goldenBundle.version,
+    });
+    expect({
+      sha256: bundle.sha256,
+      byteLength: bundle.bytes.byteLength,
+      contentHash: bundle.manifest.release?.contentHash,
+      filename: bundle.filename,
+    }).toEqual({
+      sha256: goldenBundle.sha256,
+      byteLength: goldenBundle.byteLength,
+      contentHash: goldenBundle.contentHash,
+      filename: goldenBundle.filename,
+    });
+  });
+
   it("round-trips the complete source and deterministic resolved projections", () => {
     const source = createPresetSource();
     const options = { kind: "preview" as const, sourceRevision: 7 };
@@ -968,7 +1033,7 @@ describe("deterministic bundle", () => {
     const manifest = JSON.parse(new TextDecoder().decode(entries["styleflow.manifest.json"])) as {
       compiler: { version: string };
     };
-    expect(manifest.compiler.version).toBe("1.0.0-beta.2");
+    expect(manifest.compiler.version).toBe("1.0.0-beta.6");
     const imported = importBundle(first.bytes);
     expect(imported.contract.axes.layout.roles).toContain("stack");
     expect(imported.contract.axes.layout.roles).toContain("tile");
@@ -1003,6 +1068,369 @@ describe("deterministic bundle", () => {
 
     expect(reorderedBundle.bytes).toEqual(canonicalBundle.bytes);
     expect(() => importBundle(reorderedBundle.bytes)).not.toThrow();
+  });
+
+  it("exports and imports a checksummed CSP-safe Figma projection", () => {
+    const source = createPresetSource();
+    const bundle = buildBundle(source, { kind: "preview", sourceRevision: 12 });
+    const files = unzipSync(bundle.bytes);
+    expect(files["targets/figma-vnext.json"]).toBeDefined();
+    expect(files["schemas/figma.schema.json"]).toBeDefined();
+
+    const imported = importFigmaBundle(bundle.bytes);
+    expect(imported.bundleSha256).toBe(bundle.sha256);
+    expect(imported.projection.sourceRevision).toBe(12);
+    expect(imported.projection.contentHash).toBe(bundle.manifest.preview?.contentHash);
+    expect(imported.projection.collections.map((item) => item.id)).toEqual(
+      expect.arrayContaining([
+        "primitive",
+        "theme",
+        "theme-interaction-background",
+        "intensity",
+        "breakpoint",
+        "density",
+        "layout-role",
+      ]),
+    );
+    expect(imported.projection.modeCollections.theme.length).toBeGreaterThan(1);
+    expect(imported.projection.modeCollections.tone.length).toBeGreaterThan(0);
+    expect(
+      imported.projection.modeCollections.tone.every((collectionId) =>
+        collectionId.startsWith("tone-"),
+      ),
+    ).toBe(true);
+    expect(imported.projection.axes.theme.map((item) => item.id)).toEqual([
+      "light",
+      "dark",
+      "high-contrast",
+    ]);
+    expect(imported.projection.textStyles).toHaveLength(30);
+    expect(imported.projection.bindings.color.background).toBe("semantic/color/background");
+    expect(imported.projection.bindings.layout.gap).toBe("semantic/layout/gap");
+    expect(imported.projection.formatVersion).toBe("2.1.0");
+    expect(imported.projection.collections.find((item) => item.id === "intensity")?.name).toBe(
+      "Styleflow / Color · Intensity",
+    );
+    expect(imported.projection.collections.find((item) => item.id === "layout-role")?.name).toBe(
+      "Styleflow / Layout · Role",
+    );
+
+    const variables = new Map(
+      imported.projection.collections.flatMap((collection) =>
+        collection.variables.map((variable) => [variable.path, variable] as const),
+      ),
+    );
+    expect(variables.has("theme/interaction/default/primary/default/focus-ring/main/soft-2")).toBe(
+      false,
+    );
+    expect(
+      imported.projection.bindings.color.interactions["default/primary/default"],
+    ).not.toHaveProperty("focusRing");
+    expect(
+      imported.projection.bindings.color.interactions["default/primary/focus-visible"],
+    ).toHaveProperty("focusRing");
+    expect(variables.get("semantic/color/background")?.valuesByMode.base).toEqual({
+      kind: "alias",
+      variablePath: "tone/color/background/base",
+    });
+    expect(variables.get("tone/color/background/base")?.valuesByMode.main).toEqual({
+      kind: "alias",
+      variablePath: "theme/color/background/main/base",
+    });
+    expect(variables.get("theme/color/background/main/base")?.valuesByMode.light).toEqual({
+      kind: "alias",
+      variablePath: "theme/color/main/base",
+    });
+    expect(variables.get("theme/color/main/base")?.valuesByMode.light).toEqual({
+      kind: "alias",
+      variablePath: "primitive/color/main/500",
+    });
+    expect(variables.get("primitive/color/main/500")?.valuesByMode.default?.kind).toBe("color");
+    expect([...variables.values()].flatMap((item) => Object.values(item.valuesByMode))).not.toEqual(
+      expect.arrayContaining([{ kind: "unset" }]),
+    );
+    expect(variables.get("semantic/color/background")?.scopes).toEqual(["FRAME_FILL"]);
+    expect(variables.get("semantic/on-color/foreground/primary")?.scopes).toEqual([
+      "TEXT_FILL",
+      "SHAPE_FILL",
+    ]);
+    expect(variables.get("semantic/on-color/border/default")?.scopes).toEqual(["STROKE_COLOR"]);
+    expect(variables.get("semantic/layout/gap")?.scopes).toEqual(["GAP"]);
+    expect(variables.get("semantic/layout/radius")?.scopes).toEqual(["CORNER_RADIUS"]);
+    expect(variables.get("semantic/layout/borderWidth")?.scopes).toEqual(["STROKE_FLOAT"]);
+    expect(variables.get("primitive/color/main/500")?.scopes).toEqual([]);
+    expect(variables.has("semantic/layout/containerMaxWidth")).toBe(false);
+    expect(imported.projection.bindings.layout.containerMaxWidth).toBe(
+      "density/layout/container/containerMaxWidth",
+    );
+    expect(variables.get("density/layout/container/containerMaxWidth")?.scopes).toEqual([]);
+    expect([...variables.values()].some((item) => item.path.endsWith("background-opacity"))).toBe(
+      false,
+    );
+    expect(
+      imported.projection.collections
+        .filter((item) => !["intensity", "layout-role"].includes(item.id))
+        .flatMap((item) => item.variables)
+        .every((item) => item.scopes.length === 0),
+    ).toBe(true);
+  });
+
+  it("projects asymmetric intensity profiles as one ordered axis over total collections", () => {
+    const source = createPresetSource();
+    const neutral = source.colors.intensityProfiles.find((item) => item.toneId === "neutral")!;
+    for (const level of neutral.levels) level.order += 1;
+    neutral.levels.unshift({
+      id: "soft-3",
+      label: "Soft 3",
+      order: 0,
+      status: "active",
+    });
+    for (const mapping of Object.values(neutral.mappingByTheme)) mapping["soft-3"] = "300";
+    const onColor = structuredClone(
+      source.colors.onColors.find((item) => item.backgroundRef === "color.neutral.soft-2")!,
+    );
+    onColor.backgroundRef = "color.neutral.soft-3";
+    source.colors.onColors.push(onColor);
+    const surface = structuredClone(
+      source.colors.surfaces.find(
+        (item) => item.toneId === "neutral" && item.intensity === "soft-2",
+      )!,
+    );
+    surface.intensity = "soft-3";
+    source.colors.surfaces.push(surface);
+
+    expect(evaluateFigmaTarget(source)).toMatchObject({ status: "supported", reasons: [] });
+    const first = importFigmaBundle(
+      buildBundle(source, { kind: "preview", sourceRevision: 169 }).bytes,
+    ).projection;
+    const second = importFigmaBundle(
+      buildBundle(structuredClone(source), { kind: "preview", sourceRevision: 169 }).bytes,
+    ).projection;
+    expect(first.axes.intensity.map((item) => item.id)).toEqual([
+      "soft-3",
+      "soft-2",
+      "soft-1",
+      "base",
+      "strong-1",
+      "strong-2",
+    ]);
+    expect(first.availability.intensityByTone.neutral).toEqual(
+      first.axes.intensity.map((item) => item.id),
+    );
+    expect(first.availability.intensityByTone.main).not.toContain("soft-3");
+    expect(first.modeCollections.tone.length).toBeGreaterThan(1);
+    for (const collectionId of first.modeCollections.tone) {
+      const collection = first.collections.find((item) => item.id === collectionId)!;
+      expect(first.availability.modeIdsByCollection[collectionId]).toEqual(
+        collection.modes.map((mode) => mode.id),
+      );
+      expect(
+        collection.variables.every(
+          (variable) =>
+            Object.keys(variable.valuesByMode).length === collection.modes.length &&
+            Object.values(variable.valuesByMode).every((value) => value.kind !== "unset"),
+        ),
+      ).toBe(true);
+    }
+    expect(stableStringify(first)).toBe(stableStringify(second));
+  });
+
+  it("aliases primitive token references directly instead of materializing sparse theme values", () => {
+    const source = createPresetSource();
+    const onColor = source.colors.onColors[0]!;
+    onColor.themeOverrides ??= {};
+    onColor.themeOverrides.dark = {
+      ...onColor.themeOverrides.dark,
+      foreground: {
+        ...onColor.themeOverrides.dark?.foreground,
+        primary: "color.main.600",
+      },
+      provenance: "manual",
+    };
+    const projection = importFigmaBundle(
+      buildBundle(source, { kind: "preview", sourceRevision: 173 }).bytes,
+    ).projection;
+    const variable = projection.collections
+      .flatMap((collection) => collection.variables)
+      .find(
+        (item) =>
+          item.path ===
+          `theme/on-color/foreground/primary/${onColor.backgroundRef.slice(6).replace(".", "/")}`,
+      );
+    expect(variable?.valuesByMode.dark).toEqual({
+      kind: "alias",
+      variablePath: "primitive/color/main/600",
+    });
+  });
+
+  it("composes interaction background opacity into the terminal RGBA color", () => {
+    const source = createPresetSource();
+    const background = source.colors.interactions.recipes[0]!.states.hover.background;
+    expect(background.kind).toBe("token");
+    if (background.kind === "token") background.opacity = 0.4;
+    const projection = importFigmaBundle(
+      buildBundle(source, { kind: "preview", sourceRevision: 170 }).bytes,
+    ).projection;
+    expect(
+      projection.collections
+        .find((item) => item.id === "theme-interaction-background")
+        ?.variables.some((item) =>
+          Object.values(item.valuesByMode).some(
+            (value) => value.kind === "color" && value.a === 0.4,
+          ),
+        ),
+    ).toBe(true);
+    expect(
+      projection.collections
+        .flatMap((item) => item.variables)
+        .some((item) => item.path.endsWith("background-opacity")),
+    ).toBe(false);
+  });
+
+  it("blocks contradictory intensity ordering and real Figma mode overflow", () => {
+    const contradictory = createPresetSource();
+    contradictory.colors.intensityProfiles[0]!.levels[0]!.order = 1;
+    contradictory.colors.intensityProfiles[0]!.levels[1]!.order = 0;
+    expect(evaluateFigmaTarget(contradictory).reasons).toContain("INTENSITY_AXIS_ORDER_CONFLICT");
+
+    const overflow = createPresetSource();
+    const profile = overflow.colors.intensityProfiles[0]!;
+    for (let index = 0; index < 6; index += 1) {
+      const id = `extra-${index}`;
+      profile.levels.push({ id, label: `Extra ${index}`, order: 10 + index, status: "active" });
+      for (const mapping of Object.values(profile.mappingByTheme)) mapping[id] = "500";
+    }
+    expect(evaluateFigmaTarget(overflow).reasons).toContain("INTENSITY_MODE_LIMIT_EXCEEDED");
+  });
+
+  it("omits a lossy Figma projection and returns stable target reasons", () => {
+    const source = createPresetSource();
+    delete source.settings.targets.figmaFontMappings?.main;
+    const compiled = compileProject(source);
+    expect(compiled.targets["figma-vnext"]).toEqual({
+      status: "unsupported",
+      reasons: ["FIGMA_FONT_MAPPING_MISSING"],
+    });
+    const bundle = buildBundle(source, { kind: "preview", sourceRevision: 13 });
+    expect(unzipSync(bundle.bytes)["targets/figma-vnext.json"]).toBeUndefined();
+    expect(() => importFigmaBundle(bundle.bytes)).toThrowError(
+      expect.objectContaining({
+        code: "SF_FIGMA_TARGET_UNSUPPORTED",
+        reasons: ["FIGMA_FONT_MAPPING_MISSING"],
+      }),
+    );
+  });
+
+  it("rejects a tampered Figma projection before parsing it", () => {
+    const bundle = buildBundle(createPresetSource(), { kind: "preview", sourceRevision: 14 });
+    const files = unzipSync(bundle.bytes);
+    files["targets/figma-vnext.json"] = new TextEncoder().encode('{"tampered":true}\n');
+    expect(() => importFigmaBundle(zipSync(files))).toThrowError(
+      expect.objectContaining({ code: "SF_FIGMA_BUNDLE_CHECKSUM_INVALID" }),
+    );
+    expect(FigmaBundleImportError).toBeDefined();
+  });
+
+  it("rejects hostile v2 scope, availability and reachability payloads", () => {
+    const bundle = buildBundle(createPresetSource(), { kind: "preview", sourceRevision: 171 });
+    const incompatibleScope = rewriteFigmaProjection(bundle.bytes, (projection) => {
+      const collections = projection.collections as Array<{
+        variables: Array<{ path: string; scopes: string[] }>;
+      }>;
+      const background = collections
+        .flatMap((collection) => collection.variables)
+        .find((variable) => variable.path === "semantic/color/background")!;
+      background.scopes = ["GAP"];
+    });
+    expect(() => importFigmaBundle(incompatibleScope)).toThrowError(
+      expect.objectContaining({ code: "SF_FIGMA_PROJECTION_INVALID" }),
+    );
+
+    const invalidAvailability = rewriteFigmaProjection(bundle.bytes, (projection) => {
+      const availability = projection.availability as {
+        intensityByTone: Record<string, string[]>;
+        modeIdsByCollection: Record<string, string[]>;
+      };
+      delete availability.intensityByTone.main;
+    });
+    expect(() => importFigmaBundle(invalidAvailability)).toThrowError(
+      expect.objectContaining({ code: "SF_FIGMA_PROJECTION_INVALID" }),
+    );
+
+    const invalidCollectionAvailability = rewriteFigmaProjection(bundle.bytes, (projection) => {
+      const availability = projection.availability as {
+        modeIdsByCollection: Record<string, string[]>;
+      };
+      delete availability.modeIdsByCollection[Object.keys(availability.modeIdsByCollection)[0]!];
+    });
+    expect(() => importFigmaBundle(invalidCollectionAvailability)).toThrowError(
+      expect.objectContaining({ code: "SF_FIGMA_PROJECTION_INVALID" }),
+    );
+
+    const sparseValue = rewriteFigmaProjection(bundle.bytes, (projection) => {
+      const collections = projection.collections as Array<{
+        variables: Array<{ valuesByMode: Record<string, unknown> }>;
+      }>;
+      const variable = collections.find((collection) => collection.variables.length > 0)!
+        .variables[0]!;
+      variable.valuesByMode[Object.keys(variable.valuesByMode)[0]!] = { kind: "unset" };
+    });
+    expect(() => importFigmaBundle(sparseValue)).toThrowError(
+      expect.objectContaining({ code: "SF_FIGMA_PROJECTION_INVALID" }),
+    );
+
+    const missingModeCollections = rewriteFigmaProjection(bundle.bytes, (projection) => {
+      const modeCollections = projection.modeCollections as Record<string, string[]>;
+      delete modeCollections.intensity;
+    });
+    expect(() => importFigmaBundle(missingModeCollections)).toThrowError(
+      expect.objectContaining({ code: "SF_FIGMA_PROJECTION_INVALID" }),
+    );
+
+    const missingColorBindings = rewriteFigmaProjection(bundle.bytes, (projection) => {
+      const bindings = projection.bindings as Record<string, unknown>;
+      delete bindings.color;
+    });
+    expect(() => importFigmaBundle(missingColorBindings)).toThrowError(
+      expect.objectContaining({ code: "SF_FIGMA_PROJECTION_INVALID" }),
+    );
+
+    const unreachable = rewriteFigmaProjection(bundle.bytes, (projection) => {
+      const collections = projection.collections as Array<{
+        id: string;
+        variables: Array<Record<string, unknown>>;
+      }>;
+      collections
+        .find((collection) => collection.id === "primitive")!
+        .variables.push({
+          path: "primitive/color/unreachable",
+          name: "Primitive / Color / Unreachable",
+          type: "COLOR",
+          scopes: [],
+          valuesByMode: {
+            default: { kind: "color", r: 0, g: 0, b: 0, a: 1 },
+          },
+        });
+    });
+    expect(() => importFigmaBundle(unreachable)).toThrowError(
+      expect.objectContaining({ code: "SF_FIGMA_PROJECTION_INVALID" }),
+    );
+  });
+
+  it("rejects projection v1 with an explicit unsupported-version code", () => {
+    const bundle = buildBundle(createPresetSource(), { kind: "preview", sourceRevision: 172 });
+    const v1 = rewriteFigmaProjection(bundle.bytes, (projection) => {
+      projection.formatVersion = "1.0.0";
+    });
+    expect(() => importFigmaBundle(v1)).toThrowError(
+      expect.objectContaining({ code: "SF_FIGMA_PROJECTION_VERSION_UNSUPPORTED" }),
+    );
+  });
+
+  it("rejects unsafe Figma bundle paths with a stable importer code", () => {
+    expect(() =>
+      importFigmaBundle(zipSync({ "../outside.json": new Uint8Array([1]) })),
+    ).toThrowError(expect.objectContaining({ code: "SF_FIGMA_BUNDLE_PATH_INVALID" }));
   });
 
   it("rejects tampering and unsafe paths", () => {

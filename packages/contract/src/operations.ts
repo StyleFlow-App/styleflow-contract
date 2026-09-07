@@ -207,7 +207,7 @@ function initialIntensityPosition(
   const closerPosition = profile.mappingByTheme[theme.id]?.[closerId];
   if (!closerPosition)
     return initialPosition(fallbackOrder, profile.levels.length, theme.polarity === "dark");
-  const base = Number(ramp.generator.basePosition);
+  const base = Number(profile.mappingByTheme[theme.id]?.base ?? ramp.generator.basePosition);
   const closer = Number(closerPosition);
   const defaultDirection =
     side === "soft" ? (theme.polarity === "dark" ? 1 : -1) : theme.polarity === "dark" ? -1 : 1;
@@ -500,6 +500,8 @@ export function affectedPaths(operation: DraftOperation): string[] {
       return ["/project/name", "/project/description"];
     case "set-accessibility":
       return ["/settings/accessibility"];
+    case "set-figma-font-mapping":
+      return [`/settings/targets/figmaFontMappings/${operation.fontSlotId}`];
     case "set-authoring-status":
       return ["/settings/authoring/setupStatus"];
     case "create-color-ramp":
@@ -635,6 +637,27 @@ export function applyDraftOperations(
       case "set-accessibility":
         next.settings.accessibility = { level: operation.level, policy: operation.policy };
         break;
+      case "set-figma-font-mapping": {
+        if (!next.typography.fontSlots.some((item) => item.id === operation.fontSlotId))
+          throw new Error(`Unknown font slot "${operation.fontSlotId}"`);
+        next.settings.targets.figmaFontMappings ??= {};
+        if (operation.mapping === null) {
+          delete next.settings.targets.figmaFontMappings[operation.fontSlotId];
+          if (Object.keys(next.settings.targets.figmaFontMappings).length === 0)
+            delete next.settings.targets.figmaFontMappings;
+          break;
+        }
+        next.settings.targets.figmaFontMappings[operation.fontSlotId] = {
+          family: operation.mapping.family.trim(),
+          stylesByWeight: Object.fromEntries(
+            Object.entries(operation.mapping.stylesByWeight).map(([weightId, style]) => [
+              weightId,
+              style.trim(),
+            ]),
+          ),
+        };
+        break;
+      }
       case "set-authoring-status":
         next.settings.authoring.setupStatus = operation.status;
         break;
@@ -650,6 +673,7 @@ export function applyDraftOperations(
       case "update-color-ramp": {
         const ramp = next.colors.ramps.find((item) => item.id === operation.toneId);
         if (!ramp) throw new Error(`Unknown tone "${operation.toneId}"`);
+        const previousBasePosition = ramp.generator.basePosition;
         Object.assign(ramp, structuredClone(operation.patch));
         if (operation.regenerate) {
           regenerateRamp(ramp);
@@ -658,7 +682,7 @@ export function applyDraftOperations(
           );
           if (profile)
             for (const mapping of Object.values(profile.mappingByTheme))
-              mapping.base = ramp.generator.basePosition;
+              if (mapping.base === previousBasePosition) mapping.base = ramp.generator.basePosition;
         }
         break;
       }
@@ -792,11 +816,6 @@ export function applyDraftOperations(
           throw new Error("Unknown intensity coordinate");
         if (!next.themes.some((item) => item.id === operation.themeId))
           throw new Error(`Unknown theme "${operation.themeId}"`);
-        if (operation.levelId === "base") {
-          const ramp = next.colors.ramps.find((item) => item.id === operation.toneId);
-          if (operation.position !== ramp?.generator.basePosition)
-            throw new Error("Base must resolve to the ramp's authored base color");
-        }
         profile.mappingByTheme[operation.themeId] ??= {};
         profile.mappingByTheme[operation.themeId]![operation.levelId] = operation.position;
         break;
@@ -1147,6 +1166,11 @@ export function applyDraftOperations(
         );
         for (const weight of next.typography.weights)
           delete weight.stylesByFontSlot[operation.fontSlotId];
+        if (next.settings.targets.figmaFontMappings) {
+          delete next.settings.targets.figmaFontMappings[operation.fontSlotId];
+          if (Object.keys(next.settings.targets.figmaFontMappings).length === 0)
+            delete next.settings.targets.figmaFontMappings;
+        }
         break;
       }
       case "upsert-typography-type": {
@@ -1265,6 +1289,8 @@ export function applyDraftOperations(
         next.typography.weights = next.typography.weights.filter(
           (item) => item.id !== operation.weightId,
         );
+        for (const mapping of Object.values(next.settings.targets.figmaFontMappings ?? {}))
+          delete mapping.stylesByWeight[operation.weightId];
         dedupeTypographyRecipes(next);
         break;
       }

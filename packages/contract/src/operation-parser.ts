@@ -7,6 +7,7 @@ const SUPPORTED_TYPES = new Set<DraftOperation["type"]>([
   "replace-source",
   "set-project-metadata",
   "set-accessibility",
+  "set-figma-font-mapping",
   "set-authoring-status",
   "create-color-ramp",
   "update-color-ramp",
@@ -98,6 +99,19 @@ function validIds(value: Record<string, unknown>, ...keys: string[]): boolean {
   return keys.every((key) => isIdentifier(value[key]));
 }
 
+function isFigmaFontMapping(value: unknown): boolean {
+  if (!isRecord(value) || typeof value.family !== "string") return false;
+  if (value.family.trim().length === 0 || value.family.length > 160) return false;
+  if (!isRecord(value.stylesByWeight)) return false;
+  return Object.entries(value.stylesByWeight).every(
+    ([weightId, style]) =>
+      isIdentifier(weightId) &&
+      typeof style === "string" &&
+      style.trim().length > 0 &&
+      style.length <= 160,
+  );
+}
+
 function structurallyValid(value: Record<string, unknown>): boolean {
   switch (value.type) {
     case "replace-source":
@@ -113,6 +127,11 @@ function structurallyValid(value: Record<string, unknown>): boolean {
       return (
         (value.level === "AA" || value.level === "AAA") &&
         (value.policy === "warning" || value.policy === "block")
+      );
+    case "set-figma-font-mapping":
+      return (
+        isIdentifier(value.fontSlotId) &&
+        (value.mapping === null || isFigmaFontMapping(value.mapping))
       );
     case "set-authoring-status":
       return value.status === "incomplete" || value.status === "complete";

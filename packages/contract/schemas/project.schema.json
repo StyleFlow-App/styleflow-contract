@@ -107,6 +107,27 @@
           "required": ["figmaModeLimit", "styleflowCli"],
           "properties": {
             "figmaModeLimit": { "type": "integer", "minimum": 1, "maximum": 10 },
+            "figmaFontMappings": {
+              "type": "object",
+              "propertyNames": { "$ref": "#/$defs/publicId" },
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["family", "stylesByWeight"],
+                "properties": {
+                  "family": { "type": "string", "minLength": 1, "maxLength": 160 },
+                  "stylesByWeight": {
+                    "type": "object",
+                    "propertyNames": { "$ref": "#/$defs/publicId" },
+                    "additionalProperties": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160
+                    }
+                  }
+                }
+              }
+            },
             "styleflowCli": { "const": "vnext" }
           }
         },
@@ -244,6 +265,7 @@
           "items": { "$ref": "#/$defs/intensityLevel" }
         },
         "mappingByTheme": {
+          "description": "Per-theme intensity mappings, including base. Base follows ramp regeneration when equal to the previous ramp base; different positions are preserved.",
           "type": "object",
           "additionalProperties": {
             "type": "object",

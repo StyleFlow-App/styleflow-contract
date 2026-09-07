@@ -6,6 +6,7 @@ import {
   renderOklchSource,
   rgbaToHex,
 } from "./color";
+import { evaluateFigmaTarget } from "./figma-projection";
 import { validateProjectSemantics } from "./semantic-validator";
 import { resolveThemeGraph } from "./theme-resolver";
 import type {
@@ -535,6 +536,30 @@ export function compileProject(source: StyleflowProjectSource): CompiledProject 
       themeDiagnostics.push(
         missingReference(theme.canvasToken, `/themes/${theme.id}/canvasToken`, theme.id),
       );
+    if (canvas)
+      for (const [profileIndex, profile] of source.colors.intensityProfiles.entries()) {
+        const levels = [...profile.levels].sort((left, right) => left.order - right.order);
+        const emphasis = levels.map((level) => {
+          const value = tokens[`color.${profile.toneId}.${level.id}`];
+          return value ? contrastRatio(value, canvas, canvas) : null;
+        });
+        const reversed = levels.slice(1).some((_, index) => {
+          const previous = emphasis[index];
+          const current = emphasis[index + 1];
+          return previous != null && current != null && previous > current + 1e-6;
+        });
+        if (reversed)
+          themeDiagnostics.push({
+            code: "SF_INTENSITY_ORDER_NON_MONOTONIC",
+            severity: "warning",
+            blocking: false,
+            path: `/colors/intensityProfiles/${profileIndex}/mappingByTheme/${theme.id}`,
+            themeIds: [theme.id],
+            message: `Tone "${profile.toneId}" does not increase in contrast against the canvas from Soft through Base to Strong in ${theme.label}.`,
+            suggestion:
+              "Review the theme's Base, Soft and Strong mappings; manual choices are preserved.",
+          });
+      }
     const onColors: ResolvedOnColor[] = source.colors.onColors.map((contract, contractIndex) => {
       const themeOverride = contract.themeOverrides?.[theme.id];
       const background = resolveToken(contract.backgroundRef) ?? undefined;
@@ -635,26 +660,8 @@ export function compileProject(source: StyleflowProjectSource): CompiledProject 
     ...source.colors.intensityProfiles.map((profile) => profile.levels.length),
   );
   const breakpointCount = source.layout.scales.breakpoints.length;
-  const figmaReasons = [
-    ...(breakpointCount > source.settings.targets.figmaModeLimit
-      ? ["BREAKPOINT_MODE_LIMIT_EXCEEDED"]
-      : []),
-    ...(source.themes.length > source.settings.targets.figmaModeLimit
-      ? ["THEME_MODE_LIMIT_EXCEEDED"]
-      : []),
-  ];
-  if (figmaReasons.length)
-    diagnostics.push({
-      code: "SF_TARGET_FIGMA_CAPABILITY",
-      severity: "warning",
-      blocking: false,
-      path: "/settings/targets/figmaModeLimit",
-      themeIds: [],
-      target: "figma-vnext",
-      message:
-        "The project exceeds the configured Figma mode matrix limit; the contract remains complete and is not truncated.",
-      suggestion: "Reduce active modes for Figma or consume the complete CLI vNext projection.",
-    });
+  const figmaTarget = evaluateFigmaTarget(source);
+  diagnostics.push(...figmaTarget.diagnostics);
   const softStrongCounts = source.colors.intensityProfiles.map((profile) => ({
     soft: profile.levels.filter((item) => item.id.startsWith("soft")).length,
     strong: profile.levels.filter((item) => item.id.startsWith("strong")).length,
@@ -746,8 +753,8 @@ export function compileProject(source: StyleflowProjectSource): CompiledProject 
         ],
       },
       "figma-vnext": {
-        status: figmaReasons.length ? "unsupported" : "supported",
-        reasons: figmaReasons,
+        status: figmaTarget.status,
+        reasons: figmaTarget.reasons,
       },
     },
   };

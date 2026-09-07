@@ -407,7 +407,24 @@ export function createPresetSource(): StyleflowProjectSource {
     },
     settings: {
       accessibility: { level: "AA", policy: "warning" },
-      targets: { figmaModeLimit: 10, styleflowCli: "vnext" },
+      targets: {
+        figmaModeLimit: 10,
+        figmaFontMappings: {
+          main: {
+            family: "Manrope",
+            stylesByWeight: { light: "Light", default: "Medium", strong: "Bold" },
+          },
+          display: {
+            family: "Bricolage Grotesque",
+            stylesByWeight: { light: "Light", default: "Medium", strong: "Bold" },
+          },
+          mono: {
+            family: "JetBrains Mono",
+            stylesByWeight: { light: "Light", default: "Medium", strong: "Bold" },
+          },
+        },
+        styleflowCli: "vnext",
+      },
       authoring: { setupStatus: "complete", defaultIntensityPreset: 5 },
     },
     themes: [
