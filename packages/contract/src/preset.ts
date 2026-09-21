@@ -226,6 +226,7 @@ function typographyValues(
       value: group === "display" ? "-0.025em" : group === "label" ? "0.01em" : "0em",
     },
     textCase: { value: "original" },
+    fontVariationSettings: {},
   };
 }
 
@@ -250,6 +251,7 @@ function typographyRecipe(
               lineHeight: inherited(),
               letterSpacing: inherited(),
               textCase: inherited(),
+              fontVariationSettings: {},
             },
       ]),
     ),
@@ -327,9 +329,9 @@ export function createPresetSource(): StyleflowProjectSource {
       group: "body",
       fontSlotId: "main",
       sizes: [
-        ["sm", 14],
-        ["md", 16],
         ["lg", 18],
+        ["md", 16],
+        ["sm", 14],
       ] as const,
     },
     {
@@ -349,8 +351,8 @@ export function createPresetSource(): StyleflowProjectSource {
       group: "label",
       fontSlotId: "main",
       sizes: [
-        ["sm", 12],
         ["md", 14],
+        ["sm", 12],
       ] as const,
     },
     {
@@ -359,8 +361,8 @@ export function createPresetSource(): StyleflowProjectSource {
       group: "code",
       fontSlotId: "mono",
       sizes: [
-        ["sm", 13],
         ["md", 15],
+        ["sm", 13],
       ] as const,
     },
   ];
@@ -398,7 +400,7 @@ export function createPresetSource(): StyleflowProjectSource {
   ];
 
   return {
-    formatVersion: "1.0.0",
+    formatVersion: "2.0.0",
     project: {
       id: "styleflow-foundation",
       slug: "styleflow-foundation",
@@ -519,31 +521,107 @@ export function createPresetSource(): StyleflowProjectSource {
     },
     typography: {
       generator: {
-        baseSize: 16,
-        minRatio: 1.125,
-        maxRatio: 1.25,
-        minViewport: 360,
-        maxViewport: 1440,
         lineHeightStrategy: "tight-display-relaxed-body",
+        byType: Object.fromEntries(
+          types.map((type) => [
+            type.id,
+            {
+              mode: "stepped",
+              anchorsByBreakpoint: Object.fromEntries(
+                DEFAULT_BREAKPOINTS.map((breakpoint, index) => [
+                  breakpoint.id,
+                  index === 0
+                    ? {
+                        max: `${type.sizes[0]![1] / 16}rem`,
+                        min: `${type.sizes[type.sizes.length - 1]![1] / 16}rem`,
+                      }
+                    : { inherit: true },
+                ]),
+              ),
+            },
+          ]),
+        ),
       },
       fontSlots: [
         {
           id: "main",
           label: "Main",
           familyStack: ["Manrope Variable", "sans-serif"],
-          status: "active",
+          enabled: true,
+          source: {
+            kind: "fontsource",
+            id: "manrope",
+            family: "Manrope Variable",
+            version: "5.3.0",
+            faces: [
+              {
+                style: "normal",
+                weight: { min: 200, max: 800 },
+                url: "https://cdn.jsdelivr.net/npm/@fontsource-variable/manrope@5.3.0/files/manrope-latin-wght-normal.woff2",
+                format: "woff2",
+                axes: [{ tag: "wght", min: 200, max: 800, default: 400, step: 1 }],
+              },
+            ],
+          },
         },
         {
           id: "display",
           label: "Display",
           familyStack: ["Bricolage Grotesque Variable", "sans-serif"],
-          status: "active",
+          enabled: true,
+          source: {
+            kind: "fontsource",
+            id: "bricolage-grotesque",
+            family: "Bricolage Grotesque Variable",
+            version: "5.3.0",
+            faces: [
+              {
+                style: "normal",
+                weight: { min: 200, max: 800 },
+                url: "https://cdn.jsdelivr.net/npm/@fontsource-variable/bricolage-grotesque@5.3.0/files/bricolage-grotesque-latin-standard-normal.woff2",
+                format: "woff2",
+                axes: [
+                  { tag: "opsz", min: 12, max: 96, default: 14, step: 0.1 },
+                  { tag: "wght", min: 200, max: 800, default: 400, step: 1 },
+                  { tag: "wdth", min: 75, max: 100, default: 100, step: 0.1 },
+                ],
+              },
+            ],
+          },
         },
         {
           id: "mono",
           label: "Mono",
           familyStack: ["JetBrains Mono Variable", "monospace"],
-          status: "active",
+          enabled: true,
+          source: {
+            kind: "fontsource",
+            id: "jetbrains-mono",
+            family: "JetBrains Mono Variable",
+            version: "5.3.0",
+            faces: [
+              {
+                style: "normal",
+                weight: { min: 100, max: 800 },
+                url: "https://cdn.jsdelivr.net/npm/@fontsource-variable/jetbrains-mono@5.3.0/files/jetbrains-mono-latin-wght-normal.woff2",
+                format: "woff2",
+                axes: [
+                  { tag: "ital", min: 0, max: 1, default: 0, step: 1 },
+                  { tag: "wght", min: 100, max: 800, default: 400, step: 1 },
+                ],
+              },
+              {
+                style: "italic",
+                weight: { min: 100, max: 800 },
+                url: "https://cdn.jsdelivr.net/npm/@fontsource-variable/jetbrains-mono@5.3.0/files/jetbrains-mono-latin-wght-italic.woff2",
+                format: "woff2",
+                axes: [
+                  { tag: "ital", min: 0, max: 1, default: 0, step: 1 },
+                  { tag: "wght", min: 100, max: 800, default: 400, step: 1 },
+                ],
+              },
+            ],
+          },
         },
       ],
       types: types.map((type) => ({
@@ -551,19 +629,20 @@ export function createPresetSource(): StyleflowProjectSource {
         label: type.label,
         group: type.group,
         fontSlotId: type.fontSlotId,
-        status: "active",
+        enabled: true,
+        enabledWeightIds: weights.map((weight) => weight.id),
         variants: type.sizes.map(([id], order) => ({
           id,
           label: id.toUpperCase(),
           order,
-          status: "active",
+          enabled: true,
         })),
       })),
       weights: weights.map((weight) => ({
         id: weight.id,
         label: weight.label,
         order: weight.order,
-        status: "active",
+        enabled: true,
         stylesByFontSlot: Object.fromEntries(
           ["main", "display", "mono"].map((slotId) => [
             slotId,
@@ -572,6 +651,28 @@ export function createPresetSource(): StyleflowProjectSource {
         ),
       })),
       recipes: typographyRecipes,
+      tagMappings: [
+        { tag: "h1", tyId: "heading", variantId: "1", weightId: "strong" },
+        { tag: "h2", tyId: "heading", variantId: "2", weightId: "strong" },
+        { tag: "h3", tyId: "heading", variantId: "3", weightId: "strong" },
+        { tag: "h4", tyId: "heading", variantId: "3", weightId: "strong" },
+        { tag: "h5", tyId: "heading", variantId: "3", weightId: "default" },
+        { tag: "h6", tyId: "heading", variantId: "3", weightId: "default" },
+        { tag: "p", tyId: "body", variantId: "md", weightId: "default" },
+        { tag: "li", tyId: "body", variantId: "md", weightId: "default" },
+        { tag: "blockquote", tyId: "body", variantId: "lg", weightId: "default" },
+        { tag: "small", tyId: "body", variantId: "sm", weightId: "default" },
+        { tag: "strong", weightId: "strong" },
+        { tag: "em", weightId: "default" },
+        { tag: "code", tyId: "code", variantId: "sm", weightId: "default" },
+        { tag: "kbd", tyId: "code", variantId: "sm", weightId: "default" },
+        { tag: "samp", tyId: "code", variantId: "sm", weightId: "default" },
+        { tag: "label", tyId: "label", variantId: "md", weightId: "default" },
+        { tag: "button", tyId: "label", variantId: "md", weightId: "strong" },
+        { tag: "input", tyId: "body", variantId: "md", weightId: "default" },
+        { tag: "textarea", tyId: "body", variantId: "md", weightId: "default" },
+        { tag: "select", tyId: "body", variantId: "md", weightId: "default" },
+      ],
     },
     agentPolicy: {
       disallowRawValues: true,

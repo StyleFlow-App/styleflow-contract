@@ -1,8 +1,8 @@
 export const CONTRACT_PACKAGE_NAME = "@styleflow.app/contract" as const;
-export const CONTRACT_VERSION = "1.0.0-beta.6" as const;
-export const FORMAT_VERSION = "1.0.0" as const;
-export const BUNDLE_VERSION = "1.0.0" as const;
-export const OPERATION_PROTOCOL_VERSION = "1.0.0-beta.6" as const;
+export const CONTRACT_VERSION = "1.0.0-beta.7" as const;
+export const FORMAT_VERSION = "2.0.0" as const;
+export const BUNDLE_VERSION = "2.0.0" as const;
+export const OPERATION_PROTOCOL_VERSION = "1.0.0-beta.7" as const;
 
 export const ANCHOR_POSITIONS = [
   "000",
@@ -54,6 +54,36 @@ export const LAYOUT_ROLES = [
 ] as const;
 export const DENSITIES = ["compact", "regular", "comfortable"] as const;
 export const TYPOGRAPHY_TEXT_CASES = ["original", "uppercase", "lowercase", "title"] as const;
+export const STYLEFLOW_SUPPORTED_HTML_TAGS = [
+  "a",
+  "blockquote",
+  "button",
+  "code",
+  "div",
+  "em",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "input",
+  "kbd",
+  "label",
+  "li",
+  "ol",
+  "option",
+  "p",
+  "pre",
+  "samp",
+  "section",
+  "select",
+  "small",
+  "strong",
+  "textarea",
+  "ul",
+  "article",
+] as const;
 export const DEFAULT_INTERACTION_PRIORITIES = [
   { id: "primary", label: "Primary", order: 0, status: "active" },
   { id: "secondary", label: "Secondary", order: 1, status: "active" },
@@ -78,6 +108,7 @@ export type InteractionState = (typeof INTERACTION_STATES)[number];
 export type LayoutRole = (typeof LAYOUT_ROLES)[number];
 export type Density = (typeof DENSITIES)[number];
 export type TypographyTextCase = (typeof TYPOGRAPHY_TEXT_CASES)[number];
+export type StyleflowSupportedHtmlTag = (typeof STYLEFLOW_SUPPORTED_HTML_TAGS)[number];
 export type AccessibilityLevel = "AA" | "AAA";
 export type AccessibilityPolicy = "warning" | "block";
 export type ThemePolarity = "light" | "dark" | "custom";
@@ -283,17 +314,41 @@ export interface TypographyWeightStyle {
   fontWeight: number;
   fontStyle: "normal" | "italic" | "oblique";
 }
+export interface VariableFontAxis {
+  tag: string;
+  min: number;
+  max: number;
+  default: number;
+  step: number;
+}
+export interface TypographyFontFace {
+  style: "normal" | "italic" | "oblique";
+  weight: number | { min: number; max: number };
+  url?: string;
+  format?: "woff2";
+  axes: VariableFontAxis[];
+}
+export type TypographyFontSource =
+  | {
+      kind: "fontsource" | "google-fonts";
+      id: string;
+      family: string;
+      version: string;
+      faces: TypographyFontFace[];
+    }
+  | { kind: "local"; family: string; localName: string; faces: TypographyFontFace[] };
 export interface TypographyFontSlot {
   id: string;
   label: string;
   familyStack: string[];
-  status: EntityStatus;
+  source: TypographyFontSource;
+  enabled: boolean;
 }
 export interface TypographyVariantDefinition {
   id: string;
   label: string;
   order: number;
-  status: EntityStatus;
+  enabled: boolean;
 }
 export interface TypographyTypeDefinition {
   id: string;
@@ -301,14 +356,15 @@ export interface TypographyTypeDefinition {
   group: string;
   fontSlotId: string;
   variants: TypographyVariantDefinition[];
-  status: EntityStatus;
+  enabledWeightIds: string[];
+  enabled: boolean;
 }
 export interface TypographyWeightDefinition {
   id: string;
   label: string;
   order: number;
   stylesByFontSlot: Record<string, TypographyWeightStyle>;
-  status: EntityStatus;
+  enabled: boolean;
 }
 export type ResponsiveValue<T> = { value: T } | { inherit: true };
 export interface TypographyRecipeBreakpointValues {
@@ -316,6 +372,7 @@ export interface TypographyRecipeBreakpointValues {
   lineHeight: ResponsiveValue<string>;
   letterSpacing: ResponsiveValue<CssLength>;
   textCase: ResponsiveValue<TypographyTextCase>;
+  fontVariationSettings: Record<string, ResponsiveValue<number>>;
 }
 export interface TypographyRecipe {
   tyId: string;
@@ -324,13 +381,23 @@ export interface TypographyRecipe {
   valuesByBreakpoint: Record<string, TypographyRecipeBreakpointValues>;
   provenance: Exclude<Provenance, "parent">;
 }
+export interface TypographyScaleAnchor {
+  max: CssLength;
+  min: CssLength;
+}
+export interface TypographyTypeGeneratorSettings {
+  mode: "stepped" | "fluid";
+  anchorsByBreakpoint: Record<string, TypographyScaleAnchor | { inherit: true }>;
+}
 export interface TypographyGeneratorSettings {
-  baseSize: number;
-  minRatio: number;
-  maxRatio: number;
-  minViewport: number;
-  maxViewport: number;
   lineHeightStrategy: "tight-display-relaxed-body" | "proportional";
+  byType: Record<string, TypographyTypeGeneratorSettings>;
+}
+export interface TypographyTagMapping {
+  tag: StyleflowSupportedHtmlTag;
+  tyId?: string;
+  variantId?: string;
+  weightId?: string;
 }
 export interface TypographySettings {
   generator: TypographyGeneratorSettings;
@@ -338,6 +405,7 @@ export interface TypographySettings {
   types: TypographyTypeDefinition[];
   weights: TypographyWeightDefinition[];
   recipes: TypographyRecipe[];
+  tagMappings: TypographyTagMapping[];
 }
 
 export interface AgentPolicy {
@@ -453,6 +521,7 @@ export interface TypographyToken {
       lineHeight: string;
       letterSpacing: CssLength;
       textCase: TypographyTextCase;
+      fontVariationSettings: Record<string, number>;
     }
   >;
   provenance: Provenance;
@@ -497,7 +566,8 @@ export interface StyleflowSemanticContract {
     typography: {
       types: string[];
       variantsByType: Record<string, string[]>;
-      weights: string[];
+      weightsByType: Record<string, string[]>;
+      tagMappings: TypographyTagMapping[];
     };
     interaction: {
       priorities: string[];
@@ -673,6 +743,7 @@ export type DraftOperation =
       generatedRecipes: TypographyRecipe[];
     }
   | { type: "set-typography-recipe"; recipe: TypographyRecipe }
+  | { type: "set-typography-tag-mappings"; mappings: TypographyTagMapping[] }
   | { type: "set-agent-policy"; policy: AgentPolicy };
 
 export interface DraftOperationEnvelope {

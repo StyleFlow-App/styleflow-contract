@@ -8,5 +8,7 @@ export * from "./operation-parser";
 export * from "./preset";
 export * from "./semantic-validator";
 export * from "./theme-resolver";
+export * from "./typography-generator";
 export * from "./types";
+export * from "./migrations";
 export * from "./validator";

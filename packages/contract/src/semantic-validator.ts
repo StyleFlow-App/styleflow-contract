@@ -60,6 +60,39 @@ function hasConcrete(value: unknown): value is { scaleEntryId: string } {
   return Boolean(value && typeof value === "object" && "scaleEntryId" in value);
 }
 
+function remoteFontUrlProblem(
+  kind: "fontsource" | "google-fonts",
+  version: string,
+  rawUrl: string | undefined,
+): string | undefined {
+  if (!rawUrl?.startsWith("https://")) return "Remote font faces require an exact HTTPS URL.";
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return "Remote font faces require a valid HTTPS URL.";
+  }
+  if (kind === "fontsource") {
+    if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version))
+      return "Fontsource requires an exact SemVer version.";
+    if (
+      url.hostname !== "cdn.jsdelivr.net" ||
+      !(
+        url.pathname.includes("/npm/@fontsource-variable/") ||
+        url.pathname.includes("/npm/@fontsource/") ||
+        url.pathname.includes("/fontsource/fonts/")
+      ) ||
+      !url.pathname.includes(`@${version}/`)
+    )
+      return "Fontsource faces must use the version-pinned jsDelivr @fontsource URL.";
+  }
+  if (kind === "google-fonts") {
+    if (url.hostname !== "fonts.gstatic.com" || !url.pathname.split("/").includes(version))
+      return "Google Fonts faces must use the versioned fonts.gstatic.com file returned by the Developer API.";
+  }
+  return undefined;
+}
+
 function validateCore(source: StyleflowProjectSource): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const collections: Array<[string, string[]]> = [
@@ -84,6 +117,7 @@ function validateCore(source: StyleflowProjectSource): Diagnostic[] {
     ["typography/fontSlots", source.typography.fontSlots.map((item) => item.id)],
     ["typography/types", source.typography.types.map((item) => item.id)],
     ["typography/weights", source.typography.weights.map((item) => item.id)],
+    ["typography/tagMappings", source.typography.tagMappings.map((item) => item.tag)],
     [
       "typography/recipes",
       source.typography.recipes.map((item) => `${item.tyId}:${item.variantId}:${item.weightId}`),
@@ -121,9 +155,9 @@ function validateCore(source: StyleflowProjectSource): Diagnostic[] {
       ),
     );
   if (
-    source.typography.fontSlots.length === 0 ||
-    source.typography.types.length === 0 ||
-    source.typography.weights.length === 0
+    !source.typography.fontSlots.some((item) => item.enabled) ||
+    !source.typography.types.some((item) => item.enabled) ||
+    !source.typography.weights.some((item) => item.enabled)
   )
     diagnostics.push(
       problem(
@@ -674,14 +708,31 @@ function validateTypography(source: StyleflowProjectSource): Diagnostic[] {
           `Type "${type.id}" must keep at least one variant.`,
         ),
       );
+    if (type.enabledWeightIds.length === 0)
+      diagnostics.push(
+        problem(
+          "SF_TYPOGRAPHY_WEIGHT_REQUIRED",
+          `/typography/types/${typeIndex}/enabledWeightIds`,
+          `Type "${type.id}" must keep at least one enabled weight.`,
+        ),
+      );
+    for (const weightId of type.enabledWeightIds)
+      if (!weightIds.has(weightId))
+        diagnostics.push(
+          problem(
+            "SF_TYPOGRAPHY_WEIGHT_MISSING",
+            `/typography/types/${typeIndex}/enabledWeightIds`,
+            `Type "${type.id}" enables missing weight "${weightId}".`,
+          ),
+        );
     diagnostics.push(
       ...duplicates(
         `typography/types/${typeIndex}/variants`,
         type.variants.map((item) => item.id),
       ),
     );
-    for (const variant of type.variants)
-      for (const weightId of weightIds) {
+    for (const variant of type.variants.filter((item) => item.enabled))
+      for (const weightId of type.enabledWeightIds) {
         const recipe = source.typography.recipes.find(
           (item) =>
             item.tyId === type.id && item.variantId === variant.id && item.weightId === weightId,
@@ -708,7 +759,12 @@ function validateTypography(source: StyleflowProjectSource): Diagnostic[] {
             );
             continue;
           }
-          if (breakpointIndex === 0 && Object.values(values).some((value) => "inherit" in value))
+          if (
+            breakpointIndex === 0 &&
+            [values.fontSize, values.lineHeight, values.letterSpacing, values.textCase].some(
+              (value) => "inherit" in value,
+            )
+          )
             diagnostics.push(
               problem(
                 "SF_TYPOGRAPHY_BASE_INHERIT",
@@ -718,6 +774,102 @@ function validateTypography(source: StyleflowProjectSource): Diagnostic[] {
             );
         }
       }
+  }
+  for (const [slotIndex, slot] of source.typography.fontSlots.entries()) {
+    for (const [faceIndex, face] of slot.source.faces.entries()) {
+      const urlProblem =
+        slot.source.kind === "local"
+          ? undefined
+          : remoteFontUrlProblem(slot.source.kind, slot.source.version, face.url);
+      if (urlProblem)
+        diagnostics.push(
+          problem(
+            "SF_TYPOGRAPHY_REMOTE_URL_INVALID",
+            `/typography/fontSlots/${slotIndex}/source/faces/${faceIndex}/url`,
+            urlProblem,
+          ),
+        );
+      diagnostics.push(
+        ...duplicates(
+          `typography/fontSlots/${slotIndex}/source/faces/${faceIndex}/axes`,
+          face.axes.map((axis) => axis.tag),
+        ),
+      );
+      for (const [axisIndex, axis] of face.axes.entries()) {
+        if (axis.min > axis.max)
+          diagnostics.push(
+            problem(
+              "SF_TYPOGRAPHY_AXIS_RANGE_INVALID",
+              `/typography/fontSlots/${slotIndex}/source/faces/${faceIndex}/axes/${axisIndex}`,
+              `Variable axis "${axis.tag}" minimum must not exceed its maximum.`,
+            ),
+          );
+        if (axis.min > axis.default || axis.default > axis.max)
+          diagnostics.push(
+            problem(
+              "SF_TYPOGRAPHY_AXIS_DEFAULT_OUT_OF_RANGE",
+              `/typography/fontSlots/${slotIndex}/source/faces/${faceIndex}/axes/${axisIndex}`,
+              `Variable axis "${axis.tag}" default must be inside its range.`,
+            ),
+          );
+      }
+    }
+  }
+  for (const [recipeIndex, recipe] of source.typography.recipes.entries()) {
+    const type = source.typography.types.find((item) => item.id === recipe.tyId);
+    const slot = source.typography.fontSlots.find((item) => item.id === type?.fontSlotId);
+    if (!slot) continue;
+    const axes = slot.source.faces.flatMap((face) => face.axes);
+    for (const [breakpointId, values] of Object.entries(recipe.valuesByBreakpoint))
+      for (const [axisTag, responsive] of Object.entries(values.fontVariationSettings)) {
+        if (!("value" in responsive)) continue;
+        const matching = axes.filter((axis) => axis.tag === axisTag);
+        if (matching.length === 0)
+          diagnostics.push(
+            problem(
+              "SF_TYPOGRAPHY_AXIS_MISSING",
+              `/typography/recipes/${recipeIndex}/valuesByBreakpoint/${breakpointId}/fontVariationSettings/${axisTag}`,
+              `Variable axis "${axisTag}" is not exposed by font slot "${slot.id}".`,
+            ),
+          );
+        else if (!matching.some((axis) => responsive.value >= axis.min && responsive.value <= axis.max))
+          diagnostics.push(
+            problem(
+              "SF_TYPOGRAPHY_AXIS_VALUE_OUT_OF_RANGE",
+              `/typography/recipes/${recipeIndex}/valuesByBreakpoint/${breakpointId}/fontVariationSettings/${axisTag}`,
+              `Variable axis "${axisTag}" value ${responsive.value} is outside every declared face range.`,
+            ),
+          );
+      }
+  }
+  for (const [mappingIndex, mapping] of source.typography.tagMappings.entries()) {
+    const type = mapping.tyId
+      ? source.typography.types.find((item) => item.id === mapping.tyId)
+      : undefined;
+    if (mapping.tyId && !type)
+      diagnostics.push(
+        problem(
+          "SF_TYPOGRAPHY_TAG_TYPE_MISSING",
+          `/typography/tagMappings/${mappingIndex}/tyId`,
+          `Tag "${mapping.tag}" references missing type "${mapping.tyId}".`,
+        ),
+      );
+    if (mapping.variantId && (!type || !type.variants.some((item) => item.id === mapping.variantId)))
+      diagnostics.push(
+        problem(
+          "SF_TYPOGRAPHY_TAG_VARIANT_MISSING",
+          `/typography/tagMappings/${mappingIndex}/variantId`,
+          `Tag "${mapping.tag}" references a variant without a compatible type.`,
+        ),
+      );
+    if (mapping.weightId && !weightIds.has(mapping.weightId))
+      diagnostics.push(
+        problem(
+          "SF_TYPOGRAPHY_TAG_WEIGHT_MISSING",
+          `/typography/tagMappings/${mappingIndex}/weightId`,
+          `Tag "${mapping.tag}" references missing weight "${mapping.weightId}".`,
+        ),
+      );
   }
   for (const [weightIndex, weight] of source.typography.weights.entries())
     for (const slotId of fontSlotIds)

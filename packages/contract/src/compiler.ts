@@ -458,12 +458,25 @@ function resolveTypography(source: StyleflowProjectSource): TypographyToken[] {
     const fontSlot = source.typography.fontSlots.find((item) => item.id === type?.fontSlotId);
     const weight = source.typography.weights.find((item) => item.id === recipe.weightId);
     const weightStyle = type ? weight?.stylesByFontSlot[type.fontSlotId] : undefined;
-    if (!type || !fontSlot || !weight || !weightStyle) return [];
+    const variant = type?.variants.find((item) => item.id === recipe.variantId);
+    if (
+      !type ||
+      !type.enabled ||
+      !fontSlot ||
+      !fontSlot.enabled ||
+      !weight ||
+      !weight.enabled ||
+      !weightStyle ||
+      !variant?.enabled ||
+      !type.enabledWeightIds.includes(weight.id)
+    )
+      return [];
     let previous: TypographyToken["valuesByBreakpoint"][string] = {
       fontSize: "",
       lineHeight: "",
       letterSpacing: "",
       textCase: "original",
+      fontVariationSettings: {},
     };
     const valuesByBreakpoint = Object.fromEntries(
       breakpoints.map((breakpoint) => {
@@ -474,6 +487,20 @@ function resolveTypography(source: StyleflowProjectSource): TypographyToken[] {
           lineHeight: concreteTypography(values?.lineHeight, previous.lineHeight),
           letterSpacing: concreteTypography(values?.letterSpacing, previous.letterSpacing),
           textCase: concreteTypography(values?.textCase, previous.textCase),
+          fontVariationSettings: Object.fromEntries(
+            [
+              ...new Set([
+                ...Object.keys(previous.fontVariationSettings),
+                ...Object.keys(values?.fontVariationSettings ?? {}),
+              ]),
+            ].map((axis) => [
+              axis,
+              concreteTypography(
+                values?.fontVariationSettings[axis],
+                previous.fontVariationSettings[axis] ?? 0,
+              ),
+            ]),
+          ),
         };
         previous = current;
         return [breakpoint.id, current];
@@ -693,16 +720,37 @@ export function compileProject(source: StyleflowProjectSource): CompiledProject 
             .map((item) => ({ id: item.id, minWidth: item.minWidth })),
         },
         typography: {
-          types: source.typography.types.map((item) => item.id),
+          types: source.typography.types.filter((item) => item.enabled).map((item) => item.id),
           variantsByType: Object.fromEntries(
-            source.typography.types.map((item) => [
+            source.typography.types.filter((item) => item.enabled).map((item) => [
               item.id,
               [...item.variants]
+                .filter((variant) => variant.enabled)
                 .sort((left, right) => left.order - right.order)
                 .map((variant) => variant.id),
             ]),
           ),
-          weights: source.typography.weights.map((item) => item.id),
+          weightsByType: Object.fromEntries(
+            source.typography.types
+              .filter((item) => item.enabled)
+              .map((item) => [item.id, item.enabledWeightIds]),
+          ),
+          tagMappings: structuredClone(
+            source.typography.tagMappings.filter((mapping) => {
+              const type = mapping.tyId
+                ? source.typography.types.find((item) => item.id === mapping.tyId && item.enabled)
+                : undefined;
+              if (mapping.tyId && !type) return false;
+              if (mapping.variantId && !type?.variants.some((item) => item.id === mapping.variantId && item.enabled))
+                return false;
+              const weight = mapping.weightId
+                ? source.typography.weights.find((item) => item.id === mapping.weightId && item.enabled)
+                : undefined;
+              if (mapping.weightId && !weight) return false;
+              if (mapping.weightId && type && !type.enabledWeightIds.includes(mapping.weightId)) return false;
+              return true;
+            }),
+          ),
         },
         interaction: {
           priorities: [...source.colors.interactions.priorities]
@@ -738,7 +786,9 @@ export function compileProject(source: StyleflowProjectSource): CompiledProject 
       borderlessInteractions: source.colors.interactions.recipes.some((recipe) =>
         INTERACTION_STATES.some((state) => recipe.states[state].border.kind === "none"),
       ),
-      fluidTypography: true,
+      fluidTypography: Object.values(source.typography.generator.byType).some(
+        (item) => item.mode === "fluid",
+      ),
       breakpointCount,
       typographyTokenCount: typography.length,
     },

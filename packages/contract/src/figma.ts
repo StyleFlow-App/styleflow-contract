@@ -272,7 +272,7 @@ function validManifest(value: unknown): value is BundleManifest {
   if (!isRecord(value)) return false;
   if (
     value.mediaType !== "application/vnd.styleflow.bundle+zip" ||
-    value.bundleVersion !== "1.0.0" ||
+    value.bundleVersion !== "2.0.0" ||
     (value.kind !== "preview" && value.kind !== "release") ||
     !isRecord(value.project) ||
     typeof value.project.id !== "string" ||
@@ -794,7 +794,7 @@ export function importFigmaBundle(
   if (!validManifest(manifest))
     throw new FigmaBundleImportError(
       "SF_FIGMA_BUNDLE_MANIFEST_INVALID",
-      "Bundle manifest does not satisfy Styleflow Bundle v1.",
+      "Bundle manifest does not satisfy Styleflow Bundle v2.",
     );
   verifyManifest(files, manifest);
   const target = manifest.targets["figma-vnext"];

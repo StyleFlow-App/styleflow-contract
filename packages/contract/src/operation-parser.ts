@@ -48,6 +48,7 @@ const SUPPORTED_TYPES = new Set<DraftOperation["type"]>([
   "delete-typography-weight",
   "set-typography-generator",
   "set-typography-recipe",
+  "set-typography-tag-mappings",
   "set-agent-policy",
 ]);
 
@@ -304,6 +305,8 @@ function structurallyValid(value: Record<string, unknown>): boolean {
       return isRecord(value.generator) && Array.isArray(value.generatedRecipes);
     case "set-typography-recipe":
       return isRecord(value.recipe) && validIds(value.recipe, "tyId", "variantId", "weightId");
+    case "set-typography-tag-mappings":
+      return Array.isArray(value.mappings);
     case "set-agent-policy":
       return isRecord(value.policy);
     default:

@@ -480,12 +480,14 @@ function createTypographyRecipe(
               lineHeight: { value: "1.5" },
               letterSpacing: { value: "0em" },
               textCase: { value: "original" },
+              fontVariationSettings: {},
             }
           : {
               fontSize: { inherit: true },
               lineHeight: { inherit: true },
               letterSpacing: { inherit: true },
               textCase: { inherit: true },
+              fontVariationSettings: {},
             },
       ]),
     ),
@@ -614,6 +616,8 @@ export function affectedPaths(operation: DraftOperation): string[] {
       return [
         `/typography/recipes/${operation.recipe.tyId}:${operation.recipe.variantId}:${operation.recipe.weightId}`,
       ];
+    case "set-typography-tag-mappings":
+      return ["/typography/tagMappings"];
     case "set-agent-policy":
       return ["/agentPolicy"];
   }
@@ -1100,6 +1104,7 @@ export function applyDraftOperations(
               lineHeight: { inherit: true },
               letterSpacing: { inherit: true },
               textCase: { inherit: true },
+              fontVariationSettings: {},
             };
         }
         break;
@@ -1184,7 +1189,9 @@ export function applyDraftOperations(
         );
         if (!exists)
           for (const variant of operation.typographyType.variants)
-            for (const weight of next.typography.weights) {
+            for (const weight of next.typography.weights.filter((item) =>
+              operation.typographyType.enabledWeightIds.includes(item.id),
+            )) {
               next.typography.recipes.push(
                 createTypographyRecipe(next, operation.typographyType.id, variant.id, weight.id),
               );
@@ -1210,6 +1217,15 @@ export function applyDraftOperations(
                 recipe.variantId = replacementType.variants[0]!.id;
               }
             }
+          for (const mapping of next.typography.tagMappings)
+            if (mapping.tyId === operation.typeId) {
+              mapping.tyId = operation.replacementTypeId;
+              if (
+                mapping.variantId &&
+                !replacementType.variants.some((item) => item.id === mapping.variantId)
+              )
+                mapping.variantId = replacementType.variants[0]?.id;
+            }
         }
         next.typography.types = next.typography.types.filter(
           (item) => item.id !== operation.typeId,
@@ -1226,7 +1242,9 @@ export function applyDraftOperations(
         const exists = type.variants.some((item) => item.id === operation.variant.id);
         upsert(type.variants, (item) => item.id === operation.variant.id, operation.variant);
         if (!exists)
-          for (const weight of next.typography.weights)
+          for (const weight of next.typography.weights.filter((item) =>
+            type.enabledWeightIds.includes(item.id),
+          ))
             next.typography.recipes.push(
               createTypographyRecipe(next, operation.typeId, operation.variant.id, weight.id),
             );
@@ -1250,6 +1268,10 @@ export function applyDraftOperations(
               operation.variantId,
               operation.replacementVariantId,
             );
+        if (operation.replacementVariantId)
+          for (const mapping of next.typography.tagMappings)
+            if (mapping.tyId === operation.typeId && mapping.variantId === operation.variantId)
+              mapping.variantId = operation.replacementVariantId;
         type.variants = type.variants.filter((item) => item.id !== operation.variantId);
         dedupeTypographyRecipes(next);
         break;
@@ -1262,12 +1284,14 @@ export function applyDraftOperations(
           operation.weight,
         );
         if (!exists)
-          for (const type of next.typography.types)
+          for (const type of next.typography.types) {
+            type.enabledWeightIds.push(operation.weight.id);
             for (const variant of type.variants) {
               next.typography.recipes.push(
                 createTypographyRecipe(next, type.id, variant.id, operation.weight.id),
               );
             }
+          }
         break;
       }
       case "delete-typography-weight": {
@@ -1286,9 +1310,21 @@ export function applyDraftOperations(
               operation.weightId,
               operation.replacementWeightId,
             );
+        if (operation.replacementWeightId)
+          for (const mapping of next.typography.tagMappings)
+            if (mapping.weightId === operation.weightId)
+              mapping.weightId = operation.replacementWeightId;
         next.typography.weights = next.typography.weights.filter(
           (item) => item.id !== operation.weightId,
         );
+        for (const type of next.typography.types)
+          type.enabledWeightIds = type.enabledWeightIds
+            .map((weightId) =>
+              weightId === operation.weightId && operation.replacementWeightId
+                ? operation.replacementWeightId
+                : weightId,
+            )
+            .filter((weightId) => weightId !== operation.weightId);
         for (const mapping of Object.values(next.settings.targets.figmaFontMappings ?? {}))
           delete mapping.stylesByWeight[operation.weightId];
         dedupeTypographyRecipes(next);
@@ -1317,6 +1353,9 @@ export function applyDraftOperations(
             item.weightId === operation.recipe.weightId,
           operation.recipe,
         );
+        break;
+      case "set-typography-tag-mappings":
+        next.typography.tagMappings = structuredClone(operation.mappings);
         break;
       case "set-agent-policy":
         next.agentPolicy = structuredClone(operation.policy);

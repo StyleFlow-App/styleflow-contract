@@ -1,10 +1,10 @@
 {
   "fixture": "production-preset",
-  "contractVersion": "1.0.0-beta.6",
+  "contractVersion": "1.0.0-beta.7",
   "sourceRevision": 7,
   "version": "1.0.0-beta.1",
-  "sha256": "51c69f5b5101618828f4b579f1b60e474d6a05c032e4b9bddf9cf50954b7f3c5",
-  "byteLength": 180201,
-  "contentHash": "sha256-d7b58d5e4322916310f2f4658206c0a26b47fe9158d8d37262445375c99c219f",
-  "filename": "styleflow-foundation-v1.0.0-beta.1-51c69f5b.styleflow.zip"
+  "sha256": "2ce3f58e574b3033d721aeb24f67039fe484121967e122c1f5ff2cedd46384d8",
+  "byteLength": 182852,
+  "contentHash": "sha256-9bf05e52367dc527326142544c909a355d8047d98888626b70cdb975beb3fa59",
+  "filename": "styleflow-foundation-v1.0.0-beta.1-2ce3f58e.styleflow.zip"
 }

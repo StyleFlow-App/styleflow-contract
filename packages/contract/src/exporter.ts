@@ -442,7 +442,10 @@ export function buildBundle(source: StyleflowProjectSource, options: BundleOptio
     addJson(files, resolvedTokensPath, resolvedTokens);
   }
   addJson(files, "diagnostics/diagnostics.json", compiled.diagnostics);
-  if (compiled.targets["figma-vnext"].status === "supported") {
+  if (
+    compiled.targets["figma-vnext"].status === "supported" ||
+    compiled.targets["figma-vnext"].status === "supported-with-warnings"
+  ) {
     const figmaProjection = buildFigmaProjection(compiled, {
       sourceRevision: options.sourceRevision,
       contentHash,

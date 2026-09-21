@@ -28,7 +28,7 @@ function schemaErrorToDiagnostic(error: ErrorObject): Diagnostic {
     path,
     themeIds: [],
     message: `${path} ${error.message ?? "is invalid"}.`,
-    suggestion: "Update the source to match Styleflow Project Source v1.",
+    suggestion: "Update the source to match Styleflow Project Source v2.",
   };
 }
 

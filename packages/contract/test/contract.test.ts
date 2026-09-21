@@ -129,6 +129,7 @@ describe("Styleflow project source", () => {
           lineHeight: { inherit: true },
           letterSpacing: { inherit: true },
           textCase: { inherit: true },
+          fontVariationSettings: {},
         };
     }
     const compiled = compileProject(source);
@@ -854,7 +855,13 @@ describe("responsive layout and typography", () => {
     const next = applyDraftOperations(edited, [
       {
         type: "set-typography-generator",
-        generator: { ...edited.typography.generator, maxRatio: 1.333 },
+        generator: {
+          ...edited.typography.generator,
+          byType: {
+            ...edited.typography.generator.byType,
+            body: { ...edited.typography.generator.byType.body!, mode: "fluid" },
+          },
+        },
         generatedRecipes: generated,
       },
     ]);
@@ -866,7 +873,7 @@ describe("responsive layout and typography", () => {
           item.weightId === manual.weightId,
       )?.valuesByBreakpoint.xs?.fontSize,
     ).toEqual({ value: "9rem" });
-    expect(next.typography.generator.maxRatio).toBe(1.333);
+    expect(next.typography.generator.byType.body?.mode).toBe("fluid");
   });
 
   it("creates and removes a breakpoint with complete inherited layout and type cells", () => {
@@ -908,14 +915,15 @@ describe("responsive layout and typography", () => {
           label: "Metric",
           group: "numbers",
           fontSlotId: "main",
-          status: "active",
-          variants: [{ id: "hero", label: "Hero", order: 0, status: "active" }],
+          enabled: true,
+          enabledWeightIds: source.typography.weights.map((item) => item.id),
+          variants: [{ id: "hero", label: "Hero", order: 0, enabled: true }],
         },
       },
       {
         type: "upsert-typography-variant",
         typeId: "metric",
-        variant: { id: "compact", label: "Compact", order: 1, status: "active" },
+        variant: { id: "compact", label: "Compact", order: 1, enabled: true },
       },
       {
         type: "upsert-typography-weight",
@@ -923,7 +931,7 @@ describe("responsive layout and typography", () => {
           id: "emphasis",
           label: "Emphasis",
           order: 3,
-          status: "active",
+          enabled: true,
           stylesByFontSlot: Object.fromEntries(
             source.typography.fontSlots.map((item) => [
               item.id,
@@ -1035,7 +1043,7 @@ describe("deterministic bundle", () => {
     const manifest = JSON.parse(new TextDecoder().decode(entries["styleflow.manifest.json"])) as {
       compiler: { version: string };
     };
-    expect(manifest.compiler.version).toBe("1.0.0-beta.6");
+    expect(manifest.compiler.version).toBe("1.0.0-beta.7");
     const imported = importBundle(first.bytes);
     expect(imported.contract.axes.layout.roles).toContain("stack");
     expect(imported.contract.axes.layout.roles).toContain("tile");

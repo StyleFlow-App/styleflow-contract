@@ -1,4 +1,5 @@
 import { materializeIntermediateStop, parseHexColor } from "./color";
+import { interpolateTypographyScale } from "./typography-generator";
 import type {
   CompiledProject,
   Diagnostic,
@@ -100,7 +101,7 @@ export interface FigmaProjection {
 }
 
 export interface FigmaTargetEvaluation {
-  status: "supported" | "unsupported";
+  status: "supported" | "supported-with-warnings" | "unsupported";
   reasons: string[];
   diagnostics: Diagnostic[];
 }
@@ -293,6 +294,39 @@ function fontSize(value: string, baseSize: number): number | undefined {
   return typeof result === "number" ? result : undefined;
 }
 
+function materializedTypographyFontSize(
+  source: StyleflowProjectSource,
+  tyId: string,
+  variantId: string,
+  breakpointId: string,
+  fallback: string,
+  baseSize: number,
+): number | undefined {
+  const settings = source.typography.generator.byType[tyId];
+  if (settings?.mode !== "fluid") return fontSize(fallback, baseSize);
+  const type = source.typography.types.find((item) => item.id === tyId);
+  if (!type) return undefined;
+  const variants = [...type.variants]
+    .filter((item) => item.enabled)
+    .sort((left, right) => left.order - right.order);
+  const variantIndex = variants.findIndex((item) => item.id === variantId);
+  if (variantIndex < 0) return undefined;
+  const breakpoints = [...source.layout.scales.breakpoints].sort(
+    (left, right) => left.order - right.order,
+  );
+  let anchor: { max: string; min: string } | undefined;
+  for (const breakpoint of breakpoints) {
+    const configured = settings.anchorsByBreakpoint[breakpoint.id];
+    if (configured && "max" in configured) anchor = configured;
+    if (breakpoint.id === breakpointId) break;
+  }
+  if (!anchor) return undefined;
+  return fontSize(
+    interpolateTypographyScale(anchor.max, anchor.min, variants.length)[variantIndex]!,
+    baseSize,
+  );
+}
+
 function lineHeight(value: string, baseSize: number): number | undefined {
   const normalized = value.trim().toLowerCase();
   if (/^-?(?:\d+|\d*\.\d+)$/.test(normalized)) return Number(normalized) * 100;
@@ -325,6 +359,7 @@ function effectiveTextCases(
 
 export function evaluateFigmaTarget(source: StyleflowProjectSource): FigmaTargetEvaluation {
   const reasons: string[] = [];
+  const warnings: string[] = [];
   const limit = source.settings.targets.figmaModeLimit;
   const toneIds = source.colors.intensityProfiles.map((item) => item.toneId);
   const intensity = intensityAxis(source);
@@ -341,6 +376,8 @@ export function evaluateFigmaTarget(source: StyleflowProjectSource): FigmaTarget
   pushModeReason(reasons, breakpoints.length, limit, "BREAKPOINT_MODE_LIMIT_EXCEEDED");
 
   if (intensity.conflict) reasons.push("INTENSITY_AXIS_ORDER_CONFLICT");
+  if (Object.values(source.typography.generator.byType).some((item) => item.mode === "fluid"))
+    warnings.push("FIGMA_FLUID_TYPOGRAPHY_MATERIALIZED_AT_BREAKPOINTS");
 
   const mappings = source.settings.targets.figmaFontMappings ?? {};
   const referencedSlotIds = new Set(source.typography.types.map((item) => item.fontSlotId));
@@ -356,7 +393,7 @@ export function evaluateFigmaTarget(source: StyleflowProjectSource): FigmaTarget
     }
   }
 
-  const baseSize = source.typography.generator.baseSize;
+  const baseSize = 16;
   const layoutScaleEntries = [
     ...source.layout.scales.gap,
     ...source.layout.scales.paddingInline,
@@ -373,7 +410,9 @@ export function evaluateFigmaTarget(source: StyleflowProjectSource): FigmaTarget
     if (new Set(cases).size > 1) reasons.push("FIGMA_TEXT_CASE_RESPONSIVE_UNSUPPORTED");
     for (const values of Object.values(recipe.valuesByBreakpoint)) {
       if (
-        ("value" in values.fontSize && fontSize(values.fontSize.value, baseSize) === undefined) ||
+        ("value" in values.fontSize &&
+          !values.fontSize.value.startsWith("clamp(") &&
+          fontSize(values.fontSize.value, baseSize) === undefined) ||
         ("value" in values.lineHeight &&
           lineHeight(values.lineHeight.value, baseSize) === undefined) ||
         ("value" in values.letterSpacing &&
@@ -397,10 +436,11 @@ export function evaluateFigmaTarget(source: StyleflowProjectSource): FigmaTarget
     reasons.push("FIGMA_VALUE_UNSUPPORTED");
 
   const unique = [...new Set(reasons)];
+  const uniqueWarnings = [...new Set(warnings)];
   return {
-    status: unique.length === 0 ? "supported" : "unsupported",
-    reasons: unique,
-    diagnostics: diagnostic(unique),
+    status: unique.length > 0 ? "unsupported" : uniqueWarnings.length > 0 ? "supported-with-warnings" : "supported",
+    reasons: [...unique, ...uniqueWarnings],
+    diagnostics: diagnostic([...unique, ...uniqueWarnings]),
   };
 }
 
@@ -890,7 +930,7 @@ function buildRawFigmaProjection(
   }
 
   const resolvedLayout = compiled.themes[0]?.layout.recipes ?? [];
-  const baseSize = source.typography.generator.baseSize;
+  const baseSize = 16;
   for (const role of roleItems)
     for (const densityItem of densityItems) {
       const recipe = resolvedLayout.find(
@@ -955,7 +995,14 @@ function buildRawFigmaProjection(
             const values = token.valuesByBreakpoint[item.id]!;
             const result =
               metric === "fontSize"
-                ? fontSize(values.fontSize, baseSize)
+                ? materializedTypographyFontSize(
+                    source,
+                    token.ty,
+                    token.v,
+                    item.id,
+                    values.fontSize,
+                    baseSize,
+                  )
                 : metric === "lineHeight"
                   ? lineHeight(values.lineHeight, baseSize)
                   : letterSpacing(values.letterSpacing, baseSize);
@@ -1047,7 +1094,7 @@ export function buildFigmaProjection(
   identity: { sourceRevision: number; contentHash: string },
 ): FigmaProjection {
   const evaluation = evaluateFigmaTarget(compiled.source);
-  if (evaluation.status !== "supported")
+  if (evaluation.status === "unsupported")
     throw new Error(`Figma target is unsupported: ${evaluation.reasons.join(", ")}`);
   const projection = materializeProjection(buildRawFigmaProjection(compiled, identity));
   const sparse = projection.collections.flatMap((collection) =>

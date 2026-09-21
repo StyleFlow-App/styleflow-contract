@@ -363,7 +363,7 @@ export function importBundle(
   if (!manifestValidation.valid) {
     throw new BundleImportError(
       "SF_BUNDLE_SCHEMA_INVALID",
-      "Manifest does not conform to Styleflow Bundle v1.",
+      "Manifest does not conform to Styleflow Bundle v2.",
       manifestValidation.diagnostics,
     );
   }
@@ -383,7 +383,7 @@ export function importBundle(
   if (!sourceValidation.valid) {
     throw new BundleImportError(
       "SF_BUNDLE_SCHEMA_INVALID",
-      "Source does not conform to Styleflow Project Source v1.",
+      "Source does not conform to Styleflow Project Source v2.",
       sourceValidation.diagnostics,
     );
   }
